@@ -1,0 +1,24 @@
+{
+    "visual": {
+        "name": "flowmap",
+        "displayName": "Flow map",
+        "guid": "flowmap30CFDD5B92F848C88242B1E81C8C33C7",
+        "visualClassName": "Visual",
+        "version": "2.0.0.0",
+        "description": "Flowmap is a diagram that visualizes the movement of objects from one location to another.",
+        "supportUrl": "https://github.com/CeciliaW888/pbi-flowmap",
+        "gitHubUrl": "https://github.com/CeciliaW888/pbi-flowmap"
+      },
+    "apiVersion": "5.1.0",
+    "author": {
+        "name": "Cecilia WANG",
+        "email": "cecilia@example.com"
+    },
+    "assets": {
+        "icon": "assets/icon.png"
+    },
+    "style": "style/visual.less",
+    "capabilities": "capabilities.json",
+    "dependencies": null,
+    "stringResources": []
+}

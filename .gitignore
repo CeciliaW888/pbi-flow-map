@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.tmp/
+.bundle/
+
+
+# Build artifacts
+webpack.statistics.*.html
+
+
+# IDE specific
+.vs
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+Thumbs.db
+*.log
+
+# Power BI specific
+Default EULA.pdf
+
