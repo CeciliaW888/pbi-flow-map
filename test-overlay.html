@@ -38,6 +38,69 @@
   #toggle-btn.bug { border-color: #e74c3c; }
   #toggle-btn.fix { border-color: #2ecc71; }
 
+  #filter-panel {
+    position: absolute;
+    top: 70px; right: 16px;
+    z-index: 10;
+    background: rgba(20, 20, 30, 0.92);
+    color: #ddd;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    backdrop-filter: blur(8px);
+    width: 260px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+  }
+  #filter-panel h3 {
+    color: #fff;
+    font-size: 13px;
+    margin: 0 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #filter-panel h3:not(:first-child) { margin-top: 14px; }
+  #filter-panel label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 0;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  #filter-panel label:hover { color: #fff; }
+  #filter-panel input[type="checkbox"] {
+    accent-color: #3498db;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+  .filter-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .filter-actions button {
+    background: rgba(255,255,255,0.1);
+    color: #aaa;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .filter-actions button:hover {
+    background: rgba(255,255,255,0.2);
+    color: #fff;
+  }
+  .filter-count {
+    color: #888;
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
   #info-box {
     position: absolute;
     bottom: 32px; left: 16px;
@@ -70,6 +133,11 @@
     font-family: monospace;
     backdrop-filter: blur(8px);
   }
+
+  /* Scrollbar styling for filter panel */
+  #filter-panel::-webkit-scrollbar { width: 6px; }
+  #filter-panel::-webkit-scrollbar-track { background: transparent; }
+  #filter-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -77,6 +145,24 @@
 <div id="map"></div>
 
 <button id="toggle-btn" class="bug">SVG Origin: CENTER (Bug)</button>
+
+<div id="filter-panel">
+  <h3>Origin Filter</h3>
+  <div class="filter-actions">
+    <button onclick="toggleAll('origin', true)">All</button>
+    <button onclick="toggleAll('origin', false)">None</button>
+  </div>
+  <div class="filter-count" id="origin-count"></div>
+  <div id="origin-filters"></div>
+
+  <h3>Destination Filter</h3>
+  <div class="filter-actions">
+    <button onclick="toggleAll('dest', true)">All</button>
+    <button onclick="toggleAll('dest', false)">None</button>
+  </div>
+  <div class="filter-count" id="dest-count"></div>
+  <div id="dest-filters"></div>
+</div>
 
 <div id="coords-box">
   <div>SVG root transform: <span id="transform-display">translate(w/2, h/2)</span></div>
@@ -181,23 +267,87 @@ const flowData = [
   {from:"Maricopa,AZ",to:"Clark,NV",count:8311,fromLat:33.05,fromLon:-112.05,toLat:39.57,toLon:-119.48},
 ];
 
-// Extract unique locations
-const locationMap = {};
-flowData.forEach(f => {
-  const fKey = f.from;
-  const tKey = f.to;
-  if (!locationMap[fKey]) locationMap[fKey] = { name: fKey, lat: f.fromLat, lon: f.fromLon };
-  if (!locationMap[tKey]) locationMap[tKey] = { name: tKey, lat: f.toLat, lon: f.toLon };
-});
-const locations = Object.values(locationMap);
+// Filter state
+const originFilter = {};
+const destFilter = {};
 
-// Scale for flow width and opacity
-const maxCount = flowData[0].count;
-const minCount = flowData[flowData.length - 1].count;
+// Extract unique origins and destinations (sorted)
+const uniqueOrigins = [...new Set(flowData.map(f => f.from))].sort();
+const uniqueDests = [...new Set(flowData.map(f => f.to))].sort();
+
+// Initialize all checked
+uniqueOrigins.forEach(o => originFilter[o] = true);
+uniqueDests.forEach(d => destFilter[d] = true);
+
+// Get filtered flow data
+function getFilteredFlows() {
+  return flowData.filter(f => originFilter[f.from] && destFilter[f.to]);
+}
+
+// Build filter checkboxes
+function buildFilters() {
+  const originDiv = document.getElementById('origin-filters');
+  const destDiv = document.getElementById('dest-filters');
+
+  uniqueOrigins.forEach(name => {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.dataset.type = 'origin';
+    cb.dataset.name = name;
+    cb.addEventListener('change', () => {
+      originFilter[name] = cb.checked;
+      onFilterChange();
+    });
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(name));
+    originDiv.appendChild(label);
+  });
+
+  uniqueDests.forEach(name => {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.dataset.type = 'dest';
+    cb.dataset.name = name;
+    cb.addEventListener('change', () => {
+      destFilter[name] = cb.checked;
+      onFilterChange();
+    });
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(name));
+    destDiv.appendChild(label);
+  });
+
+  updateFilterCounts();
+}
+
+function toggleAll(type, checked) {
+  const filter = type === 'origin' ? originFilter : destFilter;
+  const names = type === 'origin' ? uniqueOrigins : uniqueDests;
+  names.forEach(n => filter[n] = checked);
+
+  // Update checkboxes
+  document.querySelectorAll(`input[data-type="${type}"]`).forEach(cb => {
+    cb.checked = checked;
+  });
+  onFilterChange();
+}
+
+function updateFilterCounts() {
+  const filtered = getFilteredFlows();
+  const checkedOrigins = uniqueOrigins.filter(o => originFilter[o]).length;
+  const checkedDests = uniqueDests.filter(d => destFilter[d]).length;
+  document.getElementById('origin-count').textContent = `${checkedOrigins}/${uniqueOrigins.length} selected`;
+  document.getElementById('dest-count').textContent = `${checkedDests}/${uniqueDests.length} selected`;
+  document.getElementById('flow-count').textContent = filtered.length;
+}
 
 let useCenterOrigin = true; // Start with the bug
 
-// Create map centered on continental US
+// Create map centered on continental US — greyscale style
 const map = new maplibregl.Map({
   container: 'map',
   style: {
@@ -213,7 +363,12 @@ const map = new maplibregl.Map({
         attribution: '&copy; OpenStreetMap contributors',
       }
     },
-    layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+    layers: [{
+      id: 'osm',
+      type: 'raster',
+      source: 'osm',
+      paint: { 'raster-saturation': -1 }
+    }]
   },
   center: [-98, 38],
   zoom: 4,
@@ -222,53 +377,60 @@ const map = new maplibregl.Map({
   touchPitch: false,
 });
 
-map.on('load', () => {
-  const container = map.getCanvasContainer();
+// References to SVG elements (set on map load)
+let svgRoot, flowGroup, markerGroup;
+let flowElements = []; // { path, data }
+let markerElements = []; // { el, loc }
+
+// Scale for flow width and opacity
+const maxCount = flowData[0].count;
+
+function onFilterChange() {
+  updateFilterCounts();
+  rebuildOverlay();
+}
+
+function rebuildOverlay() {
+  if (!flowGroup || !markerGroup) return;
+
+  // Clear existing
+  flowGroup.innerHTML = '';
+  markerGroup.innerHTML = '';
+  flowElements = [];
+  markerElements = [];
+
+  const filtered = getFilteredFlows();
   const svgNS = 'http://www.w3.org/2000/svg';
 
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.classList.add('overlay-svg');
-  container.appendChild(svg);
+  // Recalculate location volumes from filtered data
+  const locationMap = {};
+  const locVolume = {};
+  filtered.forEach(f => {
+    if (!locationMap[f.from]) locationMap[f.from] = { name: f.from, lat: f.fromLat, lon: f.fromLon };
+    if (!locationMap[f.to]) locationMap[f.to] = { name: f.to, lat: f.toLat, lon: f.toLon };
+    locVolume[f.from] = (locVolume[f.from] || 0) + f.count;
+    locVolume[f.to] = (locVolume[f.to] || 0) + f.count;
+  });
+  const locations = Object.values(locationMap);
+  const maxVol = Math.max(...Object.values(locVolume), 1);
 
-  const root = document.createElementNS(svgNS, 'g');
-  root.id = 'root';
-  svg.appendChild(root);
-
-  // Flow lines group (drawn first, under markers)
-  const flowGroup = document.createElementNS(svgNS, 'g');
-  root.appendChild(flowGroup);
-
-  // Marker group (drawn on top)
-  const markerGroup = document.createElementNS(svgNS, 'g');
-  root.appendChild(markerGroup);
-
-  // Create flow line elements
-  const flowPaths = flowData.map(f => {
+  // Create flow paths
+  filtered.forEach(f => {
     const path = document.createElementNS(svgNS, 'path');
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', '#e74c3c');
-    // Width proportional to count
     const w = 1 + (f.count / maxCount) * 5;
     path.setAttribute('stroke-width', String(w));
-    // Opacity proportional to count
     const opacity = 0.15 + (f.count / maxCount) * 0.55;
     path.setAttribute('stroke-opacity', String(opacity));
     path.setAttribute('stroke-linecap', 'round');
     flowGroup.appendChild(path);
-    return path;
+    flowElements.push({ path, data: f });
   });
 
-  // Create location markers with size proportional to total flow volume
-  const locVolume = {};
-  flowData.forEach(f => {
-    locVolume[f.from] = (locVolume[f.from] || 0) + f.count;
-    locVolume[f.to] = (locVolume[f.to] || 0) + f.count;
-  });
-  const maxVol = Math.max(...Object.values(locVolume));
-
-  const markerElements = locations.map(loc => {
+  // Create location markers
+  locations.forEach(loc => {
     const g = document.createElementNS(svgNS, 'g');
-
     const vol = locVolume[loc.name] || 0;
     const r = 4 + Math.sqrt(vol / maxVol) * 10;
 
@@ -294,75 +456,96 @@ map.on('load', () => {
     g.appendChild(text);
 
     markerGroup.appendChild(g);
-    return { el: g, loc };
+    markerElements.push({ el: g, loc });
   });
 
-  // Generate arc points (same approach as the visual's arc.ts)
-  function arcPoints(fromLat, fromLon, toLat, toLon, steps) {
-    const points = [];
-    const dx = toLon - fromLon;
-    const dy = toLat - fromLat;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    // Curvature proportional to distance
-    const bulgeAmount = Math.min(dist * 0.15, 4);
-    const len = dist || 1;
-    // Perpendicular direction
-    const px = -dy / len;
-    const py = dx / len;
+  document.getElementById('loc-count').textContent = locations.length;
+  updateOverlay();
+}
 
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const lat = fromLat + dy * t;
-      const lon = fromLon + dx * t;
-      const bulge = Math.sin(t * Math.PI) * bulgeAmount;
-      points.push({ lat: lat + px * bulge, lon: lon + py * bulge });
-    }
-    return points;
+// Generate arc points
+function arcPoints(fromLat, fromLon, toLat, toLon, steps) {
+  const points = [];
+  const dx = toLon - fromLon;
+  const dy = toLat - fromLat;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const bulgeAmount = Math.min(dist * 0.15, 4);
+  const len = dist || 1;
+  const px = -dy / len;
+  const py = dx / len;
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const lat = fromLat + dy * t;
+    const lon = fromLon + dx * t;
+    const bulge = Math.sin(t * Math.PI) * bulgeAmount;
+    points.push({ lat: lat + px * bulge, lon: lon + py * bulge });
+  }
+  return points;
+}
+
+function updateOverlay() {
+  if (!svgRoot) return;
+  const container = map.getCanvasContainer();
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+
+  // Apply SVG root transform based on mode
+  if (useCenterOrigin) {
+    svgRoot.setAttribute('transform', `translate(${w / 2},${h / 2})`);
+  } else {
+    svgRoot.setAttribute('transform', 'translate(0,0)');
   }
 
-  function updateOverlay() {
-    const w = container.clientWidth;
-    const h = container.clientHeight;
+  // Update coordinate display
+  document.getElementById('transform-display').textContent =
+    useCenterOrigin ? `translate(${Math.round(w / 2)}, ${Math.round(h / 2)})` : 'translate(0, 0)';
+  document.getElementById('container-size').textContent = `${w} x ${h}`;
 
-    // Apply SVG root transform based on mode
-    if (useCenterOrigin) {
-      root.setAttribute('transform', `translate(${w / 2},${h / 2})`);
-    } else {
-      root.setAttribute('transform', 'translate(0,0)');
-    }
+  // Position markers
+  markerElements.forEach(m => {
+    const px = map.project([m.loc.lon, m.loc.lat]);
+    m.el.setAttribute('transform', `translate(${px.x},${px.y})`);
+  });
 
-    // Update coordinate display
-    document.getElementById('transform-display').textContent =
-      useCenterOrigin ? `translate(${Math.round(w / 2)}, ${Math.round(h / 2)})` : 'translate(0, 0)';
-    document.getElementById('container-size').textContent = `${w} x ${h}`;
-
-    // Position markers
-    markerElements.forEach(m => {
-      const px = map.project([m.loc.lon, m.loc.lat]);
-      m.el.setAttribute('transform', `translate(${px.x},${px.y})`);
+  // Update flow paths
+  flowElements.forEach(({ path, data: f }) => {
+    const pts = arcPoints(f.fromLat, f.fromLon, f.toLat, f.toLon, 24);
+    let d = '';
+    pts.forEach((pt, j) => {
+      const px = map.project([pt.lon, pt.lat]);
+      d += (j === 0 ? 'M' : 'L') + ` ${px.x} ${px.y} `;
     });
+    path.setAttribute('d', d);
+  });
+}
 
-    // Update flow paths
-    flowData.forEach((f, i) => {
-      const pts = arcPoints(f.fromLat, f.fromLon, f.toLat, f.toLon, 24);
-      let d = '';
-      pts.forEach((pt, j) => {
-        const px = map.project([pt.lon, pt.lat]);
-        d += (j === 0 ? 'M' : 'L') + ` ${px.x} ${px.y} `;
-      });
-      flowPaths[i].setAttribute('d', d);
-    });
-  }
+map.on('load', () => {
+  const container = map.getCanvasContainer();
+  const svgNS = 'http://www.w3.org/2000/svg';
+
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.classList.add('overlay-svg');
+  container.appendChild(svg);
+
+  svgRoot = document.createElementNS(svgNS, 'g');
+  svgRoot.id = 'root';
+  svg.appendChild(svgRoot);
+
+  flowGroup = document.createElementNS(svgNS, 'g');
+  svgRoot.appendChild(flowGroup);
+
+  markerGroup = document.createElementNS(svgNS, 'g');
+  svgRoot.appendChild(markerGroup);
+
+  // Build filter UI
+  buildFilters();
+
+  // Initial render
+  rebuildOverlay();
 
   map.on('move', updateOverlay);
   map.on('resize', updateOverlay);
-
-  // Initial render
-  updateOverlay();
-
-  // Update stats
-  document.getElementById('flow-count').textContent = flowData.length;
-  document.getElementById('loc-count').textContent = locations.length;
 
   // Toggle button
   const btn = document.getElementById('toggle-btn');

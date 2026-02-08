@@ -107,10 +107,17 @@ export class Visual implements IVisual {
             return;
         }
         selex(this._target = options.element).sty.cursor('default');
-        
-        // Debug overlay removed
-        
-        app.$state.log = (msg: string) => {}; // No-op logger
+
+        // Debug overlay — shows update() calls and code paths
+        const debugBox = document.createElement('div');
+        debugBox.id = 'pbi-debug';
+        debugBox.style.cssText = 'position:absolute;top:8px;left:8px;z-index:9999;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.5 monospace;padding:8px 12px;border-radius:6px;max-height:50%;overflow-y:auto;pointer-events:auto;min-width:320px;';
+        debugBox.innerHTML = '<div style="color:#fff;font-weight:bold;margin-bottom:4px;">DEBUG: update() log</div>';
+        this._target.appendChild(debugBox);
+        this._debugBox = debugBox;
+        this._debugCount = 0;
+
+        app.$state.log = (msg: string) => this._dbg(msg, '#6cf'); // Pipe to debug box
 
         tooltip.init(options);
         const ctx = this._ctx = new Context(options.host, new Format());
@@ -331,22 +338,53 @@ export class Visual implements IVisual {
 
     private _inited = false;
     private _initing = false;
+    private _debugBox: HTMLElement;
+    private _debugCount: number;
+
+    private _dbg(msg: string, color = '#0f0') {
+        if (!this._debugBox) return;
+        this._debugCount++;
+        const line = document.createElement('div');
+        line.style.color = color;
+        line.textContent = `[${this._debugCount}] ${msg}`;
+        this._debugBox.appendChild(line);
+        // Keep last 30 lines
+        while (this._debugBox.children.length > 31) {
+            this._debugBox.removeChild(this._debugBox.children[1]);
+        }
+        this._debugBox.scrollTop = this._debugBox.scrollHeight;
+    }
 
     public update(options: VisualUpdateOptions) {
+        const typeNames = [] as string[];
+        if (options && options.type) {
+            if (options.type & 2) typeNames.push('Data');
+            if (options.type & 4) typeNames.push('Resize');
+            if (options.type & 8) typeNames.push('ViewMode');
+            if (options.type & 16) typeNames.push('Style');
+            if (options.type & 32) typeNames.push('ResizeEnd');
+        }
+        const typeStr = `type=${options ? options.type : 'null'} [${typeNames.join('|')}]`;
+        this._dbg(`update() ${typeStr}`, '#ff0');
+
         if (!options || !options.dataViews || !options.dataViews[0]) {
+            this._dbg('  EXIT: no dataViews', '#f66');
             return;
         }
-        
+
         const view = options.dataViews && options.dataViews[0] || {} as powerbi.DataView;
         if (Persist.update(view)) {
+            this._dbg('  EXIT: Persist.update=true (persist write bounce)', '#f90');
             return;
         }
         if (this._initing) {
+            this._dbg('  EXIT: _initing=true (map still loading)', '#f90');
             return;
         }
         const ctx = this._ctx.update(view);
         const reset = (config: app.Config) => app.reset(config, () => ctx.meta.mapControl.autoFit && app.tryFitView());
         if (!this._inited) {
+            this._dbg('  INIT: _inited=false, starting app.init()', '#0ff');
             this._initing = true;
             const mapFmt = new MapFormat();
             override(ctx.original('mapElement'), override(ctx.original('mapControl'), mapFmt));
@@ -362,23 +400,39 @@ export class Visual implements IVisual {
                     }
                 } });
                 this._initing = false;
+                this._dbg('  INIT CALLBACK: map loaded, _initing=false', '#0ff');
                 if (center) {
+                    this._dbg('  INIT: reset(config) with saved center', '#0f0');
                     app.reset(this._cfg = this._config());
                 }
                 else {
+                    this._dbg('  INIT: reset(config) with autofit', '#0f0');
                     reset(this._cfg = this._config());
                 }
-                // Ensure initial update happens
-                app.update();
             });
             this._inited = true;
+            this._dbg('  _inited=true (async map load pending)', '#0ff');
         }
         else {
+            // Ensure map canvas is properly sized after visibility changes (e.g. page switch)
+            if (app.$state.mapctl && app.$state.mapctl.map) {
+                app.$state.mapctl.map.resize();
+            }
             if (ctx.isResizeVisualUpdateType(options)) {
+                this._dbg('  EXIT: isResize=true, skip', '#888');
                 return;
             }
             const config = this._cfg = this._config(), fmt = ctx.fmt;
             if (ctx.dirty()) {
+                const dirtyParts = [] as string[];
+                if (fmt.style.dirty()) dirtyParts.push('style');
+                if (fmt.advance.dirty()) dirtyParts.push('advance');
+                if (fmt.color.dirty() || fmt.width.dirty()) dirtyParts.push('color/width');
+                if (fmt.bubble.dirty()) dirtyParts.push('bubble');
+                if (fmt.valueFormat.dirty()) dirtyParts.push('valueFormat');
+                if (fmt.legend.dirty()) dirtyParts.push('legend');
+                if (fmt.mapControl.dirty() || fmt.mapElement.dirty()) dirtyParts.push('map');
+                this._dbg(`  DIRTY: [${dirtyParts.join(', ')}]`, '#f0f');
                 if (fmt.style.dirty()) {
                     reset(config);
                 }
@@ -419,6 +473,7 @@ export class Visual implements IVisual {
                 }
             }
             else {
+                this._dbg('  NOT DIRTY: calling reset(config)', '#0f0');
                 reset(config);
             }
         }

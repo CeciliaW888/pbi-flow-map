@@ -22,8 +22,10 @@ export class Context<R extends string, F> {
     }
 
     public isResizeVisualUpdateType(options: powerbi.extensibility.visual.VisualUpdateOptions): boolean {
-        // Check for resize update types (Resize = 2, ResizeEnd = 4)
-        return options.type === 2 || options.type === 4 || (options.type & 2) !== 0;
+        // Power BI API 5.1.0: Data=2, Resize=4, ViewMode=8, Style=16, ResizeEnd=32
+        // Only skip if the update contains ONLY Resize(4) and/or ResizeEnd(32) flags.
+        // Must process Data, ViewMode (page switch), Style, and all other update types.
+        return (options.type & ~(4 | 32)) === 0;
     }
 
     public persist<O extends keyof F, P extends keyof F[O]>(oname: O, pname: P, v: F[O][P]) {

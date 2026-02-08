@@ -112,8 +112,12 @@ export function tryFitView() {
 let geoquery = null as GeoQuery;
 
 function queue(groups: number[][], then: Action) {
+  let groupIndex = 0;
+  const totalGroups = groups.length;
+  $state.log(`queue() starting, ${totalGroups} groups`);
   const next = () => {
     if (groups.length === 0) {
+      $state.log(`queue() done. totalFlows=${rawGroups.length} allValids=${allValids.length}`);
       legend.info(null);
       geoquery && geoquery.cancel();
       geoquery = null;
@@ -123,6 +127,7 @@ function queue(groups: number[][], then: Action) {
       then && then();
       return;
     }
+    groupIndex++;
     const flow = groups.shift(), source = $state.config.source(flow[0]);
     let addrs = [source].concat(flow.map(r => $state.config.target(r)));
     addrs = addrs.filter(d => !$state.loc(d));
@@ -132,6 +137,7 @@ function queue(groups: number[][], then: Action) {
       next();
       return;
     }
+    $state.log(`queue() group ${groupIndex}/${totalGroups}: need geocoding ${total} addrs`);
     sofar = total - addrs.length;
     geoquery = new GeoQuery(addrs);
     const cancel = () => {
@@ -180,6 +186,9 @@ export function reset(cfg: Config, then?: Action) {
   pins.clear();
   pies.clear();
   popups.clear();
+  const injCount = cfg.injections ? Object.keys(cfg.injections).length : 0;
+  const geocodeCount = Object.keys($state.geocode).length;
+  $state.log(`reset() groups=${cfg.groups ? cfg.groups.length : 'null'} error=${cfg.error || 'none'} injections=${injCount} geocodeCache=${geocodeCount}`);
   if (cfg.error) {
     legend.info(cfg.error);
   }
@@ -230,11 +239,13 @@ function addGroup(group: number[]) {
   }
   const source = $state.config.source(group[0]);
   if (!$state.loc(source)) {
+    $state.log(`addGroup: SKIP source unlocated: "${source}"`);
     $state.issues[group[0]] = { unlocate: source };
     return;
   }
   const groupValid = [] as number[];
   const width = $state.config.weight.conv;
+  let unlocatedTargets = 0;
   for (let row of group) {
     const target = $state.config.target(row);
     const issue = {} as Issue;
@@ -244,6 +255,7 @@ function addGroup(group: number[]) {
     }
     else if (!$state.loc(target)) {
       ($state.issues[row] = issue).unlocate = target;
+      unlocatedTargets++;
     }
     else if (+width(row) <= 0) {
       ($state.issues[row] = issue).negative = target;
@@ -253,6 +265,7 @@ function addGroup(group: number[]) {
       allValids.push(row);
     }
   }
+  $state.log(`addGroup: src="${source}" rows=${group.length} valid=${groupValid.length} unlocated=${unlocatedTargets}`);
   flows.add(groupValid);
   resetColor();
   resetWidth();
