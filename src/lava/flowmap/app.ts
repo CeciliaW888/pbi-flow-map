@@ -44,6 +44,7 @@ class State {
   pixel(addr: string) {
     return this.mapctl.pixel(this.loc(addr));
   }
+  log = (msg: string) => {}; // Empty default implementation
 }
 
 export const events = {
@@ -185,6 +186,10 @@ export function reset(cfg: Config, then?: Action) {
   else {
     queue(cfg.groups, then);
   }
+}
+
+export function update() {
+  reset($state.config);
 }
 
 export function repaint(cfg: Config, type: 'flow' | 'banner' | 'legend' | 'bubble' | 'map') {

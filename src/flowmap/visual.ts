@@ -107,6 +107,11 @@ export class Visual implements IVisual {
             return;
         }
         selex(this._target = options.element).sty.cursor('default');
+        
+        // Debug overlay removed
+        
+        app.$state.log = (msg: string) => {}; // No-op logger
+
         tooltip.init(options);
         const ctx = this._ctx = new Context(options.host, new Format());
         ctx.fmt.width.bind('width', "item", "customize");
@@ -175,6 +180,8 @@ export class Visual implements IVisual {
         else if (!ctx.cat('Dest')) {
             config.error = '"Destination" field is required.'
         }
+
+        /* #endregion */
 
         /* #region  source, target, label */
         config.source = ctx.key('Origin');
@@ -272,6 +279,9 @@ export class Visual implements IVisual {
 
         /* #region  collect groups and valid rows */
         let rows = ctx.rows();
+
+        /* #endregion */
+
         if (config.style === 'flow') {
             if (!groups) {
                 groups = values(groupBy(ctx.rows(), ctx.key(sourceRole, 'color')));
@@ -323,6 +333,10 @@ export class Visual implements IVisual {
     private _initing = false;
 
     public update(options: VisualUpdateOptions) {
+        if (!options || !options.dataViews || !options.dataViews[0]) {
+            return;
+        }
+        
         const view = options.dataViews && options.dataViews[0] || {} as powerbi.DataView;
         if (Persist.update(view)) {
             return;
@@ -354,6 +368,8 @@ export class Visual implements IVisual {
                 else {
                     reset(this._cfg = this._config());
                 }
+                // Ensure initial update happens
+                app.update();
             });
             this._inited = true;
         }

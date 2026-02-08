@@ -1,14 +1,14 @@
 {
-		"version": "2.0.0.0",
-		"author": {"name":"Cecilia WANG","email":"cecilia@example.com"},
+		"version": "1.0.0.0",
+		"author": {"name":"Cecilia WANG","email":"ceciliawang621@gmail.com"},
 		"resources": [
 			{
 				"resourceId": "rId0",
 				"sourceType": 5,
-				"file": "resources/flowmap30CFDD5B92F848C88242B1E81C8C33C7.pbiviz.json"
+				"file": "resources/flowmapMapLibreB7F3A9D2E4C6.pbiviz.json"
 			}
 		],
-		"visual": {"name":"flowmap","displayName":"Flow map","guid":"flowmap30CFDD5B92F848C88242B1E81C8C33C7","visualClassName":"Visual","version":"2.0.0.0","description":"Flowmap is a diagram that visualizes the movement of objects from one location to another.","supportUrl":"https://github.com/CeciliaW888/pbi-flowmap","gitHubUrl":"https://github.com/CeciliaW888/pbi-flowmap"},
+		"visual": {"name":"flowmap","displayName":"Flow Map (MapLibre)","guid":"flowmapMapLibreB7F3A9D2E4C6","visualClassName":"Visual","version":"1.0.0.0","description":"Flowmap is a diagram that visualizes the movement of objects from one location to another.","supportUrl":"https://github.com/CeciliaW888/pbi-flow-map","gitHubUrl":"https://github.com/CeciliaW888/pbi-flow-map"},
 		"metadata": {
 			"pbivizjson": {
 				"resourceId": "rId0"

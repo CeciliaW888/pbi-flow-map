@@ -10,36 +10,36 @@ import { $state } from './app';
 
 const map20 = new Converter(20);
 
-function pointConverter(level: number) {
-    var zoom = $state.mapctl.map.getZoom();
-    if (zoom === level) {
-        return null;
-    }
-    let factor = map20.factor(zoom);
-    return (input: IPathPoint, output: number[]) => {
-        output[0] = input[0] * factor;
-        output[1] = input[1] * factor;
-    };
-}
-
 class LinePath implements IPath {
     id: Key;
     leafs: Key[];
 
     private _width: number;
     private _path = '';
-    
-    constructor(path: string, key: number, public weight: number) {
+    private _pathGenerator: () => string; // Function to regenerate path on demand
+
+    constructor(path: string | (() => string), key: number, public weight: number) {
         this.id = key;
         this._width = weight;
         this.leafs = [key];
-        this._path = path;
+
+        if (typeof path === 'string') {
+            this._path = path;
+            this._pathGenerator = null;
+        } else {
+            this._pathGenerator = path;
+            this._path = path();
+        }
     }
 
     d(tran?: (input: IPathPoint, output: number[]) => void): string {
+        // Regenerate path if we have a generator function (handles zoom changes)
+        if (this._pathGenerator) {
+            this._path = this._pathGenerator();
+        }
         return this._path;
     }
-    
+
     width(scale?: Func<number, number>): number {
         if (scale) {
             this._width = scale(this.weight);
@@ -52,97 +52,160 @@ class LinePath implements IPath {
 
 class helper {
     public static initPaths(root: ISelex, shape: IShape) {
-        let conv = pointConverter(null);
         root.selectAll('*').remove();
         root.selectAll('.base').data(shape.paths()).enter().append('path');
-        root.selectAll('path').att.class('base flow').att.d(p => p.d(conv))
+        root.selectAll('path').att.class('base flow').att.d(p => p.d())
             .att.stroke_linecap('round').att.fill('none');
     }
 
     public static line(src: ILocation, tlocs: ILocation[], trows: number[], weis: number[]) {
-        let all = tlocs.concat(src);
-        let bound = map20.points(all);
-        let spnt = bound.points.pop();
-        let pre = 'M ' + Math.round(spnt.x) + ' ' + Math.round(spnt.y);
-        let paths = {} as StringMap<LinePath>;
-        let row2tar = {} as StringMap<ILocation>;
-        for (let i = 0; i < bound.points.length; i++) {
-            row2tar[i] = tlocs[i];
-            let tpnt = bound.points[i], trow = trows[i];
-            var str = pre + ' L ' + Math.round(tpnt.x) + ' ' + Math.round(tpnt.y);
-            paths[trow] = new LinePath(str, trow, weis[i]);
+        try {
+            if (!src) return { paths: {}, bound: null };
+
+            let all = tlocs.concat(src);
+            let bound = $state.mapctl.bound(all);
+
+            if (!bound || !bound.anchor) {
+                return { paths: {}, bound: bound };
+            }
+
+            let paths = {} as StringMap<LinePath>;
+            let row2tar = {} as StringMap<ILocation>;
+            for (let i = 0; i < tlocs.length; i++) {
+                if (!tlocs[i]) continue;
+                row2tar[i] = tlocs[i];
+                let trow = trows[i];
+                const target = tlocs[i];
+
+                // Create a generator function that uses current map projection
+                const pathGenerator = () => {
+                    const srcPixel = $state.mapctl.map.project([src.longitude, src.latitude]);
+                    const tarPixel = $state.mapctl.map.project([target.longitude, target.latitude]);
+                    return 'M ' + Math.round(srcPixel.x) + ' ' + Math.round(srcPixel.y) +
+                           ' L ' + Math.round(tarPixel.x) + ' ' + Math.round(tarPixel.y);
+                };
+
+                paths[trow] = new LinePath(pathGenerator, trow, weis[i]);
+            }
+            return { paths, bound };
+        } catch (e) {
+            return { paths: {}, bound: null };
         }
-        return { paths, bound: bound as IBound };
     }
 
     public static arc(src: ILocation, tlocs: ILocation[], trows: number[], weis: number[]) {
-        let slon = src.longitude, slat = src.latitude;
-        let scoord = { x: 0, y: slat }, tcoord = { x: 0, y: 0 };
-        let all = tlocs.concat(src);
-        // let yext = extent(all, p => p.latitude);
-        let bound = $state.mapctl.bound(all);
-        let anchor = bound.anchor;
-        anchor.latitude = slat;
-        let alon = anchor.longitude;
-        let bias = map20.x(slon) - map20.x(alon);
-        if (Math.abs(alon - slon) > 180) {
-            if (alon > slon) {
-                bias = map20.x(slon + 360 - alon - 180);
+        try {
+            if (!src || typeof src.longitude !== 'number' || typeof src.latitude !== 'number') {
+                $state.log(`[Error] Invalid Source: ${JSON.stringify(src)}`);
+                throw new Error("Invalid source location");
             }
-            else {
-                bias = 0 - map20.x(alon + 360 - slon - 180);
+
+            let slon = src.longitude, slat = src.latitude;
+            let scoord = { x: 0, y: slat }, tcoord = { x: 0, y: 0 };
+            let all = tlocs.concat(src);
+            let bound = $state.mapctl.bound(all);
+
+            if (!bound || !bound.anchor) {
+                return {
+                    paths: {},
+                    bound: bound || {
+                        anchor: { longitude: 0, latitude: 0 },
+                        margin: { north: 0, south: 0, west: 0, east: 0 },
+                        offsets: []
+                    } as IBound
+                };
             }
-        }
-        let paths = {} as StringMap<LinePath>;
-        let row2tar = {} as StringMap<ILocation>;
-        let minlat = Number.POSITIVE_INFINITY;
-        let maxlat = Number.NEGATIVE_INFINITY;
-        for (var i = 0, len = tlocs.length; i < len; i++) {
-            let t = tlocs[i], tlon = t.longitude, trow = trows[i];
-            row2tar[trow] = t;
-            let miny = Number.POSITIVE_INFINITY;
-            let maxy = Number.NEGATIVE_INFINITY;
-            tcoord.y = t.latitude;
-            if (Math.abs(tlon - slon) < 180) {
-                tcoord.x = tlon - slon;
-            }
-            else {
-                if (tlon < slon) {
-                    tcoord.x = 360 - slon + tlon;
+
+            let anchor = bound.anchor;
+            anchor.latitude = slat;
+
+            let paths = {} as StringMap<LinePath>;
+            let row2tar = {} as StringMap<ILocation>;
+            let minlat = Number.POSITIVE_INFINITY;
+            let maxlat = Number.NEGATIVE_INFINITY;
+
+            for (var i = 0, len = tlocs.length; i < len; i++) {
+                let t = tlocs[i];
+                if (!t || typeof t.longitude !== 'number') continue;
+
+                let tlon = t.longitude, trow = trows[i];
+                row2tar[trow] = t;
+                let miny = Number.POSITIVE_INFINITY;
+                let maxy = Number.NEGATIVE_INFINITY;
+                tcoord.y = t.latitude;
+
+                // Calculate relative longitude considering wrapping
+                if (Math.abs(tlon - slon) < 180) {
+                    tcoord.x = tlon - slon;
                 }
                 else {
-                    tcoord.x = tlon - slon - 360;
+                    if (tlon < slon) {
+                        tcoord.x = 360 - slon + tlon;
+                    }
+                    else {
+                        tcoord.x = tlon - slon - 360;
+                    }
                 }
-            }
-            if (!arc) {
-                debugger;
-            }
-            var cnt = Math.max(Math.round(Math.abs(tcoord.x / 4)), 10);
-            var coords = arc(scoord, tcoord, cnt);
-            var sx = map20.x(0), sy = map20.y(scoord.y);
-            var str = 'M ' + Math.round(bias) + ' 0';
-            for (var pair of coords) {
-                let [px, py] = pair;
-                if (py < miny) {
-                    miny = py;
+
+                if (!arc) {
+                    debugger;
                 }
-                if (py > maxy) {
-                    maxy = py;
+
+                // Generate arc points in geographic coordinates (static)
+                var cnt = Math.max(Math.round(Math.abs(tcoord.x / 4)), 10);
+                var coords = arc(scoord, tcoord, cnt);
+
+                // Calculate min/max latitudes for bounds
+                for (var pair of coords) {
+                    let [relX, absLat] = pair;
+                    if (absLat < miny) {
+                        miny = absLat;
+                    }
+                    if (absLat > maxy) {
+                        maxy = absLat;
+                    }
                 }
-                var dx = Math.round(map20.x(px) - sx + bias);
-                var dy = Math.round(map20.y(py) - sy);
-                str += ' L ' + dx + ' ' + dy;
+
+                minlat = Math.min(minlat, miny);
+                maxlat = Math.max(maxlat, maxy);
+
+                // Create a path generator that projects coordinates on demand
+                const pathGenerator = () => {
+                    // Convert first point using MapLibre projection
+                    const firstPixel = $state.mapctl.map.project([slon, scoord.y]);
+                    var pathStr = 'M ' + Math.round(firstPixel.x) + ' ' + Math.round(firstPixel.y);
+
+                    // Convert each arc point to screen coordinates using MapLibre
+                    for (var pair of coords) {
+                        let [relX, absLat] = pair;
+                        // Convert relative longitude to absolute
+                        const absLon = slon + relX;
+                        const pixel = $state.mapctl.map.project([absLon, absLat]);
+                        pathStr += ' L ' + Math.round(pixel.x) + ' ' + Math.round(pixel.y);
+                    }
+                    return pathStr;
+                };
+
+                var apath = new LinePath(pathGenerator, trow, weis[i]);
+                apath.minLatitude = miny;
+                apath.maxLatitude = maxy;
+                paths[trow] = apath;
             }
-            var apath = new LinePath(str, trow, weis[i]);
-            minlat = Math.min(minlat, miny);
-            maxlat = Math.max(maxlat, maxy);
-            apath.minLatitude = miny;
-            apath.maxLatitude = maxy;
-            paths[trow] = apath;
+            bound.margin.north = maxlat - slat;
+            bound.margin.south = slat - minlat;
+
+            return { paths, bound };
+        } catch (err) {
+            // Return safe fallback
+            return {
+                paths: {},
+                bound: {
+                    anchor: { longitude: 0, latitude: 0 },
+                    margin: { north: 0, south: 0, west: 0, east: 0 },
+                    rect: { x: 0, y: 0, width: 0, height: 0 }
+                } as IBound
+            };
         }
-        bound.margin.north = maxlat - slat;
-        bound.margin.south = slat - minlat;
-        return { paths, bound };
     }
 }
 
@@ -153,6 +216,7 @@ export interface IShape {
     bound: IBound;
     source: ILocation;
     paths(): IPath[];
+    usesScreenCoordinates(): boolean; // True if paths are in screen space, false if in zoom-20 space
 }
 
 export function build(type: 'straight' | 'flow' | 'arc', d3: ISelex, src: ILocation, tars: ILocation[], trows: number[], weis: number[]): IShape {
@@ -174,8 +238,11 @@ class FlowShape implements IShape {
     private _layout: ILayout;
     private _row2tar = {} as StringMap<ILocation>;
     public readonly source: ILocation;
+    private _zoom20Converter: Converter;
+
     constructor(d3: ISelex, src: ILocation, tars: ILocation[], trows: number[], weis?: number[]) {
         this.source = src;
+        this._zoom20Converter = new Converter(20);
         const area = map20.points([src].concat(tars));
         const points = area.points;
         const source = points.shift() as IPoint;
@@ -200,15 +267,31 @@ class FlowShape implements IShape {
     }
 
     rewidth() {
-        const conv = pointConverter(null);
+        const currentZoom = $state.mapctl.map.getZoom();
+        const scaleFactor = this._zoom20Converter.factor(currentZoom);
+
         this.d3.selectAll<IPath>('path')
-            .att.stroke_width(p => p.width($state.width))
-            .att.d(p => p.d(conv));
+            .att.stroke_width(p => p.width($state.width) / scaleFactor)
+            .att.d(p => p.d());
     }
 
     transform(map: maplibregl.Map, pzoom: number) {
-        const conv = pointConverter(pzoom);
-        conv && this.d3.selectAll<IPath>('.flow').att.d(p => p.d(conv));
+        const currentZoom = map.getZoom();
+        const scaleFactor = this._zoom20Converter.factor(currentZoom);
+
+        // Create converter function that scales zoom-20 coordinates to current zoom
+        const converter = (input: IPathPoint, output: number[]) => {
+            output[0] = input[0] * scaleFactor;
+            output[1] = input[1] * scaleFactor;
+        };
+
+        // Apply conversion to all paths
+        this.d3.selectAll<IPath>('.flow').att.d(p => p.d(converter));
+        this.rewidth();
+    }
+
+    usesScreenCoordinates(): boolean {
+        return false; // FlowShape uses zoom-20 coordinate space
     }
 }
 
@@ -238,17 +321,21 @@ class LineShape implements IShape {
     }
 
     rewidth() {
-        const factor = map20.factor($state.mapctl.map.getZoom());
-        const width = (v: number) => $state.width(v) / factor;
-        this.d3.att.scale(factor);
-        this.d3.selectAll<IPath>('path').att.stroke_width(p => p.width(width));
+        // Update stroke widths based on current scale
+        this.d3.selectAll<IPath>('path').att.stroke_width(p => p.width($state.width));
     }
 
     transform(map: maplibregl.Map, pzoom: number) {
+        // Regenerate path coordinates using current map projection
+        this.d3.selectAll<IPath>('.flow').att.d(p => p.d());
         this.rewidth();
     }
 
     paths(): IPath[] {
         return values(this._row2Path);
+    }
+
+    usesScreenCoordinates(): boolean {
+        return true; // LineShape uses screen coordinates directly
     }
 }
