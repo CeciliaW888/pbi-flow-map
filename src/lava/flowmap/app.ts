@@ -265,11 +265,14 @@ function addGroup(group: number[]) {
       allValids.push(row);
     }
   }
-  $state.log(`addGroup: src="${source}" rows=${group.length} valid=${groupValid.length} unlocated=${unlocatedTargets}`);
+  $state.log(`addGroup: src="${source}" rows=${group.length} valid=${groupValid.length} unlocated=${unlocatedTargets} style=${$state.config.style}`);
   flows.add(groupValid);
+  $state.log(`addGroup: flows.add done, totalFlows=${flows.count()}`);
   resetColor();
   resetWidth();
   flows.reformat(true, true);
+  // DOM inspection: show what's actually in the SVG after rendering
+  $state.log(flows.debugDom());
   legend.resize();
   pies.reset(allValids);
   popups.repaint();
@@ -278,6 +281,7 @@ function addGroup(group: number[]) {
 function resetWidth() {
   const weight = $state.config.weight;
   const domain = flows.reweight(weight.conv), [dmin, dmax] = domain;
+  $state.log(`resetWidth: domain=[${dmin}, ${dmax}] scale=${(weight as any).scale} hasMax=${'max' in weight} hasUnit=${'unit' in weight}`);
   let invert = null as Func<number, number>;
   if ('max' in weight) {
     const { min, max } = weight, range = [min, max];

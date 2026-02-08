@@ -111,7 +111,7 @@ export class Visual implements IVisual {
         // Debug overlay — shows update() calls and code paths
         const debugBox = document.createElement('div');
         debugBox.id = 'pbi-debug';
-        debugBox.style.cssText = 'position:absolute;top:8px;left:8px;z-index:9999;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.5 monospace;padding:8px 12px;border-radius:6px;max-height:50%;overflow-y:auto;pointer-events:auto;min-width:320px;';
+        debugBox.style.cssText = 'position:absolute;top:8px;left:8px;z-index:9999;background:rgba(0,0,0,0.75);color:#0f0;font:9px/1.3 monospace;padding:4px 6px;border-radius:4px;max-height:30%;max-width:40%;overflow-y:auto;pointer-events:auto;';
         debugBox.innerHTML = '<div style="color:#fff;font-weight:bold;margin-bottom:4px;">DEBUG: update() log</div>';
         this._target.appendChild(debugBox);
         this._debugBox = debugBox;

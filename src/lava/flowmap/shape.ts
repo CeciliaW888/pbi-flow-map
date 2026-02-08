@@ -9,6 +9,7 @@ import { ISelex } from '../d3';
 import { $state } from './app';
 
 const map20 = new Converter(20);
+const MAP20_SIZE = 256 * Math.pow(2, 20); // 268435456 pixels at zoom 20
 
 class LinePath implements IPath {
     id: Key;
@@ -220,14 +221,17 @@ export interface IShape {
 }
 
 export function build(type: 'straight' | 'flow' | 'arc', d3: ISelex, src: ILocation, tars: ILocation[], trows: number[], weis: number[]): IShape {
+    $state.log(`shape.build: type=${type} src=(${src ? src.latitude.toFixed(2) + ',' + src.longitude.toFixed(2) : 'NULL'}) targets=${tars.length}`);
     switch (type) {
         case 'flow':
             return new FlowShape(d3, src, tars, trows, weis);
         case 'arc':
             const arc = helper.arc(src, tars, trows, weis);
+            $state.log(`shape.build(arc): ${Object.keys(arc.paths).length} paths, bound=${arc.bound ? 'OK' : 'NULL'}`);
             return new LineShape(d3, src, arc.paths, arc.bound);
         case 'straight':
             const line = helper.line(src, tars, trows, weis);
+            $state.log(`shape.build(straight): ${Object.keys(line.paths).length} paths, bound=${line.bound ? 'OK' : 'NULL'}`);
             return new LineShape(d3, src, line.paths, line.bound);
     }
 }
@@ -238,13 +242,24 @@ class FlowShape implements IShape {
     private _layout: ILayout;
     private _row2tar = {} as StringMap<ILocation>;
     public readonly source: ILocation;
-    private _zoom20Converter: Converter;
+    // Anchor's absolute zoom-20 pixel position (for inverse projection)
+    private _anchorX20: number;
+    private _anchorY20: number;
 
     constructor(d3: ISelex, src: ILocation, tars: ILocation[], trows: number[], weis?: number[]) {
         this.source = src;
-        this._zoom20Converter = new Converter(20);
         const area = map20.points([src].concat(tars));
+        if (!area) {
+            $state.log(`FlowShape: area is NULL!`);
+        }
         const points = area.points;
+        const nullPoints = points.filter(p => !p).length;
+        $state.log(`FlowShape: ${points.length} pts (${nullPoints} null), anchor=(${area.anchor ? area.anchor.latitude.toFixed(2) + ',' + area.anchor.longitude.toFixed(2) : 'NULL'})`);
+
+        // Store anchor's absolute zoom-20 position for the converter
+        this._anchorX20 = map20.x(area.anchor.longitude);
+        this._anchorY20 = map20.y(area.anchor.latitude);
+
         const source = points.shift() as IPoint;
         source.key = $state.config.source(trows[0]);
         for (let i = 0; i < points.length; i++){
@@ -252,6 +267,7 @@ class FlowShape implements IShape {
             this._row2tar[trows[i]] = tars[i];
         }
         this._layout = layout(source, points, weis);
+        $state.log(`FlowShape: layout ${this._layout.paths().length} paths`);
         helper.initPaths(d3, this);
         this.d3 = d3;
         this.bound = area;
@@ -267,31 +283,50 @@ class FlowShape implements IShape {
     }
 
     rewidth() {
-        const currentZoom = $state.mapctl.map.getZoom();
-        const scaleFactor = this._zoom20Converter.factor(currentZoom);
+        // Convert zoom-20 relative coords → geographic → screen via map.project().
+        // This uses the exact same projection path as pies and LineShape,
+        // guaranteeing consistent positioning.
+        const map = $state.mapctl.map;
+        const ax = this._anchorX20;
+        const ay = this._anchorY20;
+
+        const converter = (input: number[], output: number[]) => {
+            // 1. Zoom-20 relative → absolute zoom-20
+            const absX = ax + input[0];
+            const absY = ay + input[1];
+            // 2. Inverse Web Mercator: zoom-20 pixels → geographic
+            const lon = (absX / MAP20_SIZE) * 360 - 180;
+            const yNorm = 0.5 - absY / MAP20_SIZE;
+            const lat = Math.atan(Math.exp(yNorm * 2 * Math.PI)) * 360 / Math.PI - 90;
+            // 3. Geographic → screen via MapLibre (same as pies/LineShape)
+            const pixel = map.project([lon, lat]);
+            output[0] = pixel.x;
+            output[1] = pixel.y;
+        };
+
+        let sampleWidth = NaN;
+        let sampleD = '';
 
         this.d3.selectAll<IPath>('path')
-            .att.stroke_width(p => p.width($state.width) / scaleFactor)
-            .att.d(p => p.d());
+            .att.stroke_width(p => {
+                const w = p.width($state.width);
+                if (isNaN(sampleWidth)) sampleWidth = w;
+                return w;
+            })
+            .att.d(p => {
+                const d = p.d(converter);
+                if (!sampleD) sampleD = d;
+                return d;
+            });
+        $state.log(`FlowShape.rewidth: sampleW=${isNaN(sampleWidth) ? 'NONE' : sampleWidth.toFixed(1)} d="${sampleD.substring(0, 80)}"`);
     }
 
     transform(map: maplibregl.Map, pzoom: number) {
-        const currentZoom = map.getZoom();
-        const scaleFactor = this._zoom20Converter.factor(currentZoom);
-
-        // Create converter function that scales zoom-20 coordinates to current zoom
-        const converter = (input: IPathPoint, output: number[]) => {
-            output[0] = input[0] * scaleFactor;
-            output[1] = input[1] * scaleFactor;
-        };
-
-        // Apply conversion to all paths
-        this.d3.selectAll<IPath>('.flow').att.d(p => p.d(converter));
         this.rewidth();
     }
 
     usesScreenCoordinates(): boolean {
-        return false; // FlowShape uses zoom-20 coordinate space
+        return true; // Converter projects to absolute screen coords via map.project()
     }
 }
 

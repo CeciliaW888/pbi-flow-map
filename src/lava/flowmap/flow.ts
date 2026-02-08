@@ -97,15 +97,23 @@ class VisualFlow {
     };
 
     private _relayout() {
-        this._shape = this._build();
-        if (!this._shape) {
+        try {
+            this._shape = this._build();
+        } catch (e) {
+            $state.log(`flow._relayout: BUILD ERROR: ${e}`);
             return;
         }
+        if (!this._shape) {
+            $state.log(`flow._relayout: shape is null/undefined`);
+            return;
+        }
+        const pathCount = this._shape.paths().length;
+        $state.log(`flow._relayout: shape OK, ${pathCount} paths, screenCoords=${this._shape.usesScreenCoordinates()}`);
         let all = this._sRoot
             .selectAll<IPath>('.flow')
             .on('mouseover', this._onover)
             .on('mouseout', this._onout);
-        
+
         this._translate();
         events.pathInited && events.pathInited(all);
     }
@@ -118,22 +126,18 @@ class VisualFlow {
     }
 
     private _translate() {
-        if (this._shape.usesScreenCoordinates()) {
-            // LineShape: paths are in screen coordinates, no transform needed
-            this._tRoot.att.transform('translate(0,0)');
-        } else {
-            // FlowShape: paths are in zoom-20 space relative to anchor
-            const pixel = $state.mapctl.pixel(this._shape.bound);
-            const zoom = $state.mapctl.map.getZoom();
-            const scale = Math.pow(2, zoom - 20);
-            this._tRoot.att.transform(`translate(${pixel.x},${pixel.y}) scale(${scale})`);
-        }
+        // Both FlowShape and LineShape now use absolute screen coordinates
+        // (via map.project()), so no group transform needed.
+        this._tRoot.att.transform('translate(0,0)');
     }
 
     private _build() {
         const source = $state.loc($state.config.source(this.rows[0]));
         const weights = this.rows.map(r => Math.max($state.config.weight.conv(r), 0));
         const targets = this.rows.map(r => $state.loc($state.config.target(r)));
+        const nullTargets = targets.filter(t => !t).length;
+        const zeroWeights = weights.filter(w => w === 0).length;
+        $state.log(`flow._build: src=${source ? 'OK' : 'NULL'} targets=${targets.length} nullTgts=${nullTargets} zeroWts=${zeroWeights}`);
         return build($state.config.style, this._sRoot, source, targets, this.rows, weights);
     }
 }
@@ -162,7 +166,12 @@ export function init(d3: ISelex): IListener {
 }
 
 export function add(rows: number[]) {
+    $state.log(`flow.add: ${rows.length} rows, style=${$state.config.style}`);
     flows.push(new VisualFlow(root.append('g'), rows));
+}
+
+export function count(): number {
+    return flows.length;
 }
 
 export function clear() {
@@ -193,4 +202,33 @@ export function reformat(recolor: boolean, rewidth: boolean) {
     for (let f of flows) {
         f.reformat(recolor, rewidth);
     }
+}
+
+/** Inspect actual SVG DOM and return debug info */
+export function debugDom(): string {
+    if (!root) return 'flow.debugDom: no root';
+    const node = root.node();
+    if (!node) return 'flow.debugDom: no node';
+    const groups = node.querySelectorAll('g.vflow');
+    const paths = node.querySelectorAll('path.flow');
+    let info = `DOM: ${groups.length} flow-groups, ${paths.length} path elements`;
+    // Log group transforms
+    for (let i = 0; i < Math.min(groups.length, 2); i++) {
+        const g = groups[i] as SVGGElement;
+        info += `\n  g[${i}].transform="${g.getAttribute('transform') || 'NONE'}"`;
+    }
+    // Log first few path attributes
+    for (let i = 0; i < Math.min(paths.length, 3); i++) {
+        const p = paths[i] as SVGPathElement;
+        const d = p.getAttribute('d') || 'EMPTY';
+        const sw = p.getAttribute('stroke-width') || 'NONE';
+        const st = p.getAttribute('stroke') || 'NONE';
+        info += `\n  path[${i}] stroke=${st} sw=${sw} d="${d.substring(0, 60)}..."`;
+    }
+    if (paths.length === 0 && groups.length > 0) {
+        // Check what's inside the groups
+        const g = groups[0] as SVGGElement;
+        info += `\n  g[0] children: ${g.innerHTML.substring(0, 200)}`;
+    }
+    return info;
 }
