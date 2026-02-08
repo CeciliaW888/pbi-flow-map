@@ -397,7 +397,7 @@ export class Controller {
     let h = container.clientHeight;
     this._svg.att.width('100%').att.height('100%');
     this._canvas && this._canvas.att.size(w, h);
-    this._svgroot.att.translate(w / 2, h / 2);
+    this._svgroot.att.translate(0, 0);
     for (let l of this._listener) {
       l.resize && l.resize(this);
     }

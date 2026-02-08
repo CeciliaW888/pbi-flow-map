@@ -96,7 +96,7 @@ function _placer(length: number): Func<number, IPoint> {
     var { x, y, width, height } = $state.border;
     var loc = null as Func<number, IPoint>, gap = Math.min(20, width / length);
     return i => {
-        return { x: i * gap - width / 2 + 10, y: height / 2 - 20 };
+        return { x: i * gap + 10, y: height - 20 };
     }
 }
 

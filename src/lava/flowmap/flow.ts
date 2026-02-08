@@ -118,7 +118,16 @@ class VisualFlow {
     }
 
     private _translate() {
-        this._tRoot.att.translate($state.mapctl.pixel(this._shape.bound));
+        if (this._shape.usesScreenCoordinates()) {
+            // LineShape: paths are in screen coordinates, no transform needed
+            this._tRoot.att.transform('translate(0,0)');
+        } else {
+            // FlowShape: paths are in zoom-20 space relative to anchor
+            const pixel = $state.mapctl.pixel(this._shape.bound);
+            const zoom = $state.mapctl.map.getZoom();
+            const scale = Math.pow(2, zoom - 20);
+            this._tRoot.att.transform(`translate(${pixel.x},${pixel.y}) scale(${scale})`);
+        }
     }
 
     private _build() {
@@ -139,8 +148,8 @@ export function init(d3: ISelex): IListener {
         const height = container.clientHeight;
         return rect.att.width(width)
             .att.height(height)
-            .att.x(0 - width / 2)
-            .att.y(0 - height / 2);
+            .att.x(0)
+            .att.y(0);
     };
     root = d3.append('g');
     return {

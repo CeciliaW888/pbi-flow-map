@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MapLibre SVG Overlay - Flow Map Coordinate Test</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.17.0/dist/maplibre-gl.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; }
+  #map { width: 100vw; height: 100vh; }
+
+  .overlay-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  #toggle-btn {
+    position: absolute;
+    top: 16px; right: 16px;
+    z-index: 10;
+    background: rgba(20, 20, 30, 0.88);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: background 0.2s;
+  }
+  #toggle-btn:hover { background: rgba(40, 40, 60, 0.95); }
+  #toggle-btn.bug { border-color: #e74c3c; }
+  #toggle-btn.fix { border-color: #2ecc71; }
+
+  #info-box {
+    position: absolute;
+    bottom: 32px; left: 16px;
+    z-index: 10;
+    background: rgba(20, 20, 30, 0.88);
+    color: #ddd;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.6;
+    max-width: 420px;
+    backdrop-filter: blur(8px);
+  }
+  #info-box strong { color: #fff; }
+  #info-box .mode-label { font-weight: 700; font-size: 14px; }
+  #info-box .mode-label.bug { color: #e74c3c; }
+  #info-box .mode-label.fix { color: #2ecc71; }
+
+  #coords-box {
+    position: absolute;
+    top: 16px; left: 16px;
+    z-index: 10;
+    background: rgba(20, 20, 30, 0.88);
+    color: #aaa;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    font-family: monospace;
+    backdrop-filter: blur(8px);
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<button id="toggle-btn" class="bug">SVG Origin: CENTER (Bug)</button>
+
+<div id="coords-box">
+  <div>SVG root transform: <span id="transform-display">translate(w/2, h/2)</span></div>
+  <div>Container: <span id="container-size">-</span></div>
+  <div>Flows: <span id="flow-count">-</span> | Locations: <span id="loc-count">-</span></div>
+</div>
+
+<div id="info-box">
+  <div>Mode: <span id="mode-label" class="mode-label bug">CENTER (Bug)</span></div>
+  <div style="margin-top:8px;">
+    <strong>What's happening:</strong><br>
+    <span id="info-text">
+      The SVG root &lt;g&gt; is translated to (w/2, h/2), but MapLibre's
+      <code>map.project()</code> returns coordinates from the top-left.
+      Every marker and flow line is shifted right and down by half the container size.
+    </span>
+  </div>
+  <div style="margin-top:8px; color:#888; font-size:11px;">
+    Using real sample data: US county-to-county migration (top 75 flows).
+    Pan and zoom to test alignment.
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@5.17.0/dist/maplibre-gl.js"></script>
+<script>
+// Real sample data from dist/sample.xlsx — top 75 US county migration flows
+const flowData = [
+  {from:"Los Angeles,CA",to:"San Bernardino,CA",count:135657,fromLat:34.05,fromLon:-118.25,toLat:34.12,toLon:-117.3},
+  {from:"Dade,FL",to:"Broward,FL",count:89915,fromLat:28.37,fromLon:-82.2,toLat:26.05,toLon:-80.2},
+  {from:"San Bernardino,CA",to:"Los Angeles,CA",count:59614,fromLat:34.12,fromLon:-117.3,toLat:34.05,toLon:-118.25},
+  {from:"Los Angeles,CA",to:"Clark,NV",count:55857,fromLat:34.05,fromLon:-118.25,toLat:39.57,toLon:-119.48},
+  {from:"Los Angeles,CA",to:"San Diego,CA",count:51287,fromLat:34.05,fromLon:-118.25,toLat:32.72,toLon:-117.15},
+  {from:"Denver,CO",to:"Arapahoe,CO",count:38004,fromLat:39.73,fromLon:-104.98,toLat:38.85,toLon:-102.18},
+  {from:"DuPage,IL",to:"Cook,IL",count:37276,fromLat:41.84,fromLon:-88.08,toLat:39.58,toLon:-88.4},
+  {from:"Los Angeles,CA",to:"Maricopa,AZ",count:32598,fromLat:34.05,fromLon:-118.25,toLat:33.05,toLon:-112.05},
+  {from:"Santa Clara,CA",to:"Alameda,CA",count:32559,fromLat:37.35,fromLon:-121.27,toLat:35.23,toLon:-119.0},
+  {from:"Queens,NY",to:"Kings,NY",count:31727,fromLat:40.72,fromLon:-73.87,toLat:43.15,toLon:-73.85},
+  {from:"New York,NY",to:"Kings,NY",count:31320,fromLat:40.72,fromLon:-74.0,toLat:43.15,toLon:-73.85},
+  {from:"San Diego,CA",to:"Los Angeles,CA",count:30156,fromLat:32.72,fromLon:-117.15,toLat:34.05,toLon:-118.25},
+  {from:"Riverside,CA",to:"Los Angeles,CA",count:27965,fromLat:33.95,fromLon:-117.4,toLat:34.05,toLon:-118.25},
+  {from:"Denver,CO",to:"Jefferson,CO",count:26971,fromLat:39.73,fromLon:-104.98,toLat:39.38,toLon:-105.8},
+  {from:"Orange,CA",to:"San Diego,CA",count:26963,fromLat:33.78,fromLon:-117.85,toLat:32.72,toLon:-117.15},
+  {from:"San Francisco,CA",to:"Alameda,CA",count:26642,fromLat:37.78,fromLon:-122.42,toLat:35.23,toLon:-119.0},
+  {from:"Kings,NY",to:"New York,NY",count:25072,fromLat:43.15,fromLon:-73.85,toLat:40.72,toLon:-74.0},
+  {from:"Contra Costa,CA",to:"Alameda,CA",count:22583,fromLat:37.91,fromLon:-122.0,toLat:35.23,toLon:-119.0},
+  {from:"Harris,TX",to:"Travis,TX",count:21231,fromLat:29.72,fromLon:-95.28,toLat:31.13,toLon:-97.0},
+  {from:"Fulton,GA",to:"Cobb,GA",count:20862,fromLat:33.84,fromLon:-84.48,toLat:31.97,toLon:-83.98},
+  {from:"San Diego,CA",to:"Orange,CA",count:19487,fromLat:32.72,fromLon:-117.15,toLat:33.78,toLon:-117.85},
+  {from:"Pima,AZ",to:"Maricopa,AZ",count:18723,fromLat:32.9,fromLon:-109.83,toLat:33.05,toLon:-112.05},
+  {from:"Los Angeles,CA",to:"Alameda,CA",count:18606,fromLat:34.05,fromLon:-118.25,toLat:35.23,toLon:-119.0},
+  {from:"District of Columbia,DC",to:"Montgomery,MD",count:18448,fromLat:40.74,fromLon:-73.91,toLat:39.02,toLon:-77.05},
+  {from:"Broward,FL",to:"Dade,FL",count:18136,fromLat:26.05,fromLon:-80.2,toLat:28.37,toLon:-82.2},
+  {from:"Alameda,CA",to:"Santa Clara,CA",count:17933,fromLat:35.23,fromLon:-119.0,toLat:37.35,toLon:-121.27},
+  {from:"Cook,IL",to:"Maricopa,AZ",count:17057,fromLat:39.58,fromLon:-88.4,toLat:33.05,toLon:-112.05},
+  {from:"Los Angeles,CA",to:"Santa Clara,CA",count:15701,fromLat:34.05,fromLon:-118.25,toLat:37.35,toLon:-121.27},
+  {from:"Nassau,NY",to:"New York,NY",count:15668,fromLat:42.52,fromLon:-73.62,toLat:40.72,toLon:-74.0},
+  {from:"Riverside,CA",to:"San Diego,CA",count:15281,fromLat:33.95,fromLon:-117.4,toLat:32.72,toLon:-117.15},
+  {from:"Maricopa,AZ",to:"Pima,AZ",count:14979,fromLat:33.05,fromLon:-112.05,toLat:32.9,toLon:-109.83},
+  {from:"Harris,TX",to:"Dallas,TX",count:14725,fromLat:29.72,fromLon:-95.28,toLat:32.78,toLon:-96.8},
+  {from:"Dade,FL",to:"Palm Beach,FL",count:14448,fromLat:28.37,fromLon:-82.2,toLat:26.7,toLon:-80.03},
+  {from:"New York,NY",to:"Los Angeles,CA",count:12965,fromLat:40.72,fromLon:-74.0,toLat:34.05,toLon:-118.25},
+  {from:"San Bernardino,CA",to:"Clark,NV",count:12779,fromLat:34.12,fromLon:-117.3,toLat:39.57,toLon:-119.48},
+  {from:"Los Angeles,CA",to:"King,WA",count:12575,fromLat:34.05,fromLon:-118.25,toLat:45.8,toLon:-122.6},
+  {from:"San Diego,CA",to:"Clark,NV",count:12548,fromLat:32.72,fromLon:-117.15,toLat:39.57,toLon:-119.48},
+  {from:"San Diego,CA",to:"Maricopa,AZ",count:12516,fromLat:32.72,fromLon:-117.15,toLat:33.05,toLon:-112.05},
+  {from:"Orange,CA",to:"Clark,NV",count:12283,fromLat:33.78,fromLon:-117.85,toLat:39.57,toLon:-119.48},
+  {from:"Cook,IL",to:"Los Angeles,CA",count:12270,fromLat:39.58,fromLon:-88.4,toLat:34.05,toLon:-118.25},
+  {from:"Los Angeles,CA",to:"Sacramento,CA",count:12260,fromLat:34.05,fromLon:-118.25,toLat:38.58,toLon:-121.5},
+  {from:"Santa Clara,CA",to:"Sacramento,CA",count:11835,fromLat:37.35,fromLon:-121.27,toLat:38.58,toLon:-121.5},
+  {from:"San Francisco,CA",to:"Los Angeles,CA",count:11815,fromLat:37.78,fromLon:-122.42,toLat:34.05,toLon:-118.25},
+  {from:"San Bernardino,CA",to:"San Diego,CA",count:11522,fromLat:34.12,fromLon:-117.3,toLat:32.72,toLon:-117.15},
+  {from:"Bronx,NY",to:"Kings,NY",count:11419,fromLat:40.85,fromLon:-73.9,toLat:43.15,toLon:-73.85},
+  {from:"Dallas,TX",to:"Harris,TX",count:11419,fromLat:32.78,fromLon:-96.8,toLat:29.72,toLon:-95.28},
+  {from:"Travis,TX",to:"Harris,TX",count:11305,fromLat:31.13,fromLon:-97.0,toLat:29.72,toLon:-95.28},
+  {from:"Los Angeles,CA",to:"Cook,IL",count:11292,fromLat:34.05,fromLon:-118.25,toLat:39.58,toLon:-88.4},
+  {from:"Alameda,CA",to:"Los Angeles,CA",count:10883,fromLat:35.23,fromLon:-119.0,toLat:34.05,toLon:-118.25},
+  {from:"Orange,CA",to:"Maricopa,AZ",count:10549,fromLat:33.78,fromLon:-117.85,toLat:33.05,toLon:-112.05},
+  {from:"Queens,NY",to:"Broward,FL",count:10460,fromLat:40.72,fromLon:-73.87,toLat:26.05,toLon:-80.2},
+  {from:"Dallas,TX",to:"Travis,TX",count:10447,fromLat:32.78,fromLon:-96.8,toLat:31.13,toLon:-97.0},
+  {from:"Alameda,CA",to:"San Francisco,CA",count:10341,fromLat:35.23,fromLon:-119.0,toLat:37.78,toLon:-122.42},
+  {from:"Dade,FL",to:"Orange,FL",count:10060,fromLat:28.37,fromLon:-82.2,toLat:30.23,toLon:-85.03},
+  {from:"Cook,IL",to:"Clark,NV",count:9963,fromLat:39.58,fromLon:-88.4,toLat:39.57,toLon:-119.48},
+  {from:"Los Angeles,CA",to:"San Francisco,CA",count:9910,fromLat:34.05,fromLon:-118.25,toLat:37.78,toLon:-122.42},
+  {from:"Los Angeles,CA",to:"Dallas,TX",count:9824,fromLat:34.05,fromLon:-118.25,toLat:32.78,toLon:-96.8},
+  {from:"Bexar,TX",to:"Travis,TX",count:9775,fromLat:29.23,fromLon:-98.68,toLat:31.13,toLon:-97.0},
+  {from:"Santa Clara,CA",to:"Los Angeles,CA",count:9763,fromLat:37.35,fromLon:-121.27,toLat:34.05,toLon:-118.25},
+  {from:"Los Angeles,CA",to:"Harris,TX",count:9752,fromLat:34.05,fromLon:-118.25,toLat:29.72,toLon:-95.28},
+  {from:"Maricopa,AZ",to:"Los Angeles,CA",count:9647,fromLat:33.05,fromLon:-112.05,toLat:34.05,toLon:-118.25},
+  {from:"Bexar,TX",to:"Harris,TX",count:9412,fromLat:29.23,fromLon:-98.68,toLat:29.72,toLon:-95.28},
+  {from:"Alameda,CA",to:"Sacramento,CA",count:9336,fromLat:35.23,fromLon:-119.0,toLat:38.58,toLon:-121.5},
+  {from:"Harris,TX",to:"Bexar,TX",count:9281,fromLat:29.72,fromLon:-95.28,toLat:29.23,toLon:-98.68},
+  {from:"San Diego,CA",to:"San Bernardino,CA",count:9233,fromLat:32.72,fromLon:-117.15,toLat:34.12,toLon:-117.3},
+  {from:"Kings,NY",to:"Broward,FL",count:9053,fromLat:43.15,fromLon:-73.85,toLat:26.05,toLon:-80.2},
+  {from:"Clark,NV",to:"Los Angeles,CA",count:9021,fromLat:39.57,fromLon:-119.48,toLat:34.05,toLon:-118.25},
+  {from:"De Kalb,GA",to:"Cobb,GA",count:8919,fromLat:33.79,fromLon:-84.28,toLat:31.97,toLon:-83.98},
+  {from:"Nassau,NY",to:"Palm Beach,FL",count:8859,fromLat:42.52,fromLon:-73.62,toLat:26.7,toLon:-80.03},
+  {from:"Harris,TX",to:"Tarrant,TX",count:8783,fromLat:29.72,fromLon:-95.28,toLat:32.82,toLon:-97.08},
+  {from:"Maricopa,AZ",to:"San Diego,CA",count:8715,fromLat:33.05,fromLon:-112.05,toLat:32.72,toLon:-117.15},
+  {from:"Montgomery,MD",to:"District of Columbia,DC",count:8474,fromLat:39.02,fromLon:-77.05,toLat:40.74,toLon:-73.91},
+  {from:"Los Angeles,CA",to:"New York,NY",count:8446,fromLat:34.05,fromLon:-118.25,toLat:40.72,toLon:-74.0},
+  {from:"Santa Clara,CA",to:"San Francisco,CA",count:8325,fromLat:37.35,fromLon:-121.27,toLat:37.78,toLon:-122.42},
+  {from:"Maricopa,AZ",to:"Clark,NV",count:8311,fromLat:33.05,fromLon:-112.05,toLat:39.57,toLon:-119.48},
+];
+
+// Extract unique locations
+const locationMap = {};
+flowData.forEach(f => {
+  const fKey = f.from;
+  const tKey = f.to;
+  if (!locationMap[fKey]) locationMap[fKey] = { name: fKey, lat: f.fromLat, lon: f.fromLon };
+  if (!locationMap[tKey]) locationMap[tKey] = { name: tKey, lat: f.toLat, lon: f.toLon };
+});
+const locations = Object.values(locationMap);
+
+// Scale for flow width and opacity
+const maxCount = flowData[0].count;
+const minCount = flowData[flowData.length - 1].count;
+
+let useCenterOrigin = true; // Start with the bug
+
+// Create map centered on continental US
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      osm: {
+        type: 'raster',
+        tiles: [
+          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        ],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap contributors',
+      }
+    },
+    layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+  },
+  center: [-98, 38],
+  zoom: 4,
+  dragRotate: false,
+  pitchWithRotate: false,
+  touchPitch: false,
+});
+
+map.on('load', () => {
+  const container = map.getCanvasContainer();
+  const svgNS = 'http://www.w3.org/2000/svg';
+
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.classList.add('overlay-svg');
+  container.appendChild(svg);
+
+  const root = document.createElementNS(svgNS, 'g');
+  root.id = 'root';
+  svg.appendChild(root);
+
+  // Flow lines group (drawn first, under markers)
+  const flowGroup = document.createElementNS(svgNS, 'g');
+  root.appendChild(flowGroup);
+
+  // Marker group (drawn on top)
+  const markerGroup = document.createElementNS(svgNS, 'g');
+  root.appendChild(markerGroup);
+
+  // Create flow line elements
+  const flowPaths = flowData.map(f => {
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#e74c3c');
+    // Width proportional to count
+    const w = 1 + (f.count / maxCount) * 5;
+    path.setAttribute('stroke-width', String(w));
+    // Opacity proportional to count
+    const opacity = 0.15 + (f.count / maxCount) * 0.55;
+    path.setAttribute('stroke-opacity', String(opacity));
+    path.setAttribute('stroke-linecap', 'round');
+    flowGroup.appendChild(path);
+    return path;
+  });
+
+  // Create location markers with size proportional to total flow volume
+  const locVolume = {};
+  flowData.forEach(f => {
+    locVolume[f.from] = (locVolume[f.from] || 0) + f.count;
+    locVolume[f.to] = (locVolume[f.to] || 0) + f.count;
+  });
+  const maxVol = Math.max(...Object.values(locVolume));
+
+  const markerElements = locations.map(loc => {
+    const g = document.createElementNS(svgNS, 'g');
+
+    const vol = locVolume[loc.name] || 0;
+    const r = 4 + Math.sqrt(vol / maxVol) * 10;
+
+    const circle = document.createElementNS(svgNS, 'circle');
+    circle.setAttribute('r', String(r));
+    circle.setAttribute('fill', '#3498db');
+    circle.setAttribute('stroke', 'white');
+    circle.setAttribute('stroke-width', '1.5');
+    circle.setAttribute('fill-opacity', '0.8');
+    g.appendChild(circle);
+
+    const text = document.createElementNS(svgNS, 'text');
+    text.textContent = loc.name;
+    text.setAttribute('x', String(r + 4));
+    text.setAttribute('y', '4');
+    text.setAttribute('fill', 'white');
+    text.setAttribute('stroke', 'rgba(0,0,0,0.7)');
+    text.setAttribute('stroke-width', '3');
+    text.setAttribute('paint-order', 'stroke');
+    text.setAttribute('font-size', '11');
+    text.setAttribute('font-weight', '600');
+    text.setAttribute('font-family', 'system-ui, sans-serif');
+    g.appendChild(text);
+
+    markerGroup.appendChild(g);
+    return { el: g, loc };
+  });
+
+  // Generate arc points (same approach as the visual's arc.ts)
+  function arcPoints(fromLat, fromLon, toLat, toLon, steps) {
+    const points = [];
+    const dx = toLon - fromLon;
+    const dy = toLat - fromLat;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Curvature proportional to distance
+    const bulgeAmount = Math.min(dist * 0.15, 4);
+    const len = dist || 1;
+    // Perpendicular direction
+    const px = -dy / len;
+    const py = dx / len;
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const lat = fromLat + dy * t;
+      const lon = fromLon + dx * t;
+      const bulge = Math.sin(t * Math.PI) * bulgeAmount;
+      points.push({ lat: lat + px * bulge, lon: lon + py * bulge });
+    }
+    return points;
+  }
+
+  function updateOverlay() {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+
+    // Apply SVG root transform based on mode
+    if (useCenterOrigin) {
+      root.setAttribute('transform', `translate(${w / 2},${h / 2})`);
+    } else {
+      root.setAttribute('transform', 'translate(0,0)');
+    }
+
+    // Update coordinate display
+    document.getElementById('transform-display').textContent =
+      useCenterOrigin ? `translate(${Math.round(w / 2)}, ${Math.round(h / 2)})` : 'translate(0, 0)';
+    document.getElementById('container-size').textContent = `${w} x ${h}`;
+
+    // Position markers
+    markerElements.forEach(m => {
+      const px = map.project([m.loc.lon, m.loc.lat]);
+      m.el.setAttribute('transform', `translate(${px.x},${px.y})`);
+    });
+
+    // Update flow paths
+    flowData.forEach((f, i) => {
+      const pts = arcPoints(f.fromLat, f.fromLon, f.toLat, f.toLon, 24);
+      let d = '';
+      pts.forEach((pt, j) => {
+        const px = map.project([pt.lon, pt.lat]);
+        d += (j === 0 ? 'M' : 'L') + ` ${px.x} ${px.y} `;
+      });
+      flowPaths[i].setAttribute('d', d);
+    });
+  }
+
+  map.on('move', updateOverlay);
+  map.on('resize', updateOverlay);
+
+  // Initial render
+  updateOverlay();
+
+  // Update stats
+  document.getElementById('flow-count').textContent = flowData.length;
+  document.getElementById('loc-count').textContent = locations.length;
+
+  // Toggle button
+  const btn = document.getElementById('toggle-btn');
+  const modeLabel = document.getElementById('mode-label');
+  const infoText = document.getElementById('info-text');
+
+  btn.addEventListener('click', () => {
+    useCenterOrigin = !useCenterOrigin;
+
+    if (useCenterOrigin) {
+      btn.textContent = 'SVG Origin: CENTER (Bug)';
+      btn.className = 'bug';
+      modeLabel.textContent = 'CENTER (Bug)';
+      modeLabel.className = 'mode-label bug';
+      infoText.innerHTML = `The SVG root &lt;g&gt; is translated to (w/2, h/2), but MapLibre's
+        <code>map.project()</code> returns coordinates from the top-left.
+        Every marker and flow line is shifted right and down by half the container size.`;
+    } else {
+      btn.textContent = 'SVG Origin: TOP-LEFT (Fix)';
+      btn.className = 'fix';
+      modeLabel.textContent = 'TOP-LEFT (Fix)';
+      modeLabel.className = 'mode-label fix';
+      infoText.innerHTML = `The SVG root &lt;g&gt; has no offset transform. MapLibre's
+        <code>map.project()</code> coordinates map directly to SVG positions.
+        Markers and flow lines align perfectly with the map at all zoom levels.`;
+    }
+
+    updateOverlay();
+  });
+});
+</script>
+</body>
+</html>

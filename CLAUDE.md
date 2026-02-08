@@ -286,30 +286,31 @@ events.doneGeocoding = (locations) => {
 
 ## 🧪 Testing
 
-### Manual Testing
+### Standalone Overlay Test (Quick)
+
+Open `test-overlay.html` in a browser to test SVG-to-map alignment without Power BI. Uses real sample data (top 75 US county migration flows from `dist/sample.xlsx`). Has a toggle to switch between buggy center-origin and correct top-left-origin modes.
+
+### Manual Testing (Full)
 
 1. **Build the visual:**
    ```bash
-   cd code && npx pbiviz package
+   npx pbiviz package
    ```
 
 2. **Import into Power BI Desktop:**
    - File → Options → Security → Enable custom visuals
    - Import the `.pbiviz` file from `/dist/`
 
-3. **Test with sample data:**
-   ```
-   Origin          | Destination      | Value
-   New York, USA   | London, UK      | 100
-   Paris, France   | Berlin, Germany | 50
-   Tokyo, Japan    | Sydney, Australia| 75
-   ```
+3. **Test with sample data** (`dist/sample.xlsx`):
+   - Contains 1,585 US county-to-county migration flows
+   - Columns: from, to, count, from lat, from lon, to lat, to lon
 
 4. **Verify:**
    - [ ] Map loads with OpenStreetMap tiles
    - [ ] Locations geocode successfully
    - [ ] Flow lines render between points
-   - [ ] Zoom/pan works
+   - [ ] **Flows/pins/pies align with correct map locations at all zoom levels**
+   - [ ] Zoom/pan works and overlay tracks the map
    - [ ] Tooltips display
    - [ ] Legend shows correctly
 
@@ -331,7 +332,34 @@ events.doneGeocoding = (locations) => {
 
 ## ⚠️ Important Gotchas
 
-### 1. Coordinate Order Swap
+### 1. SVG Overlay Coordinate Origin (CRITICAL!)
+
+**MapLibre's `map.project()` returns pixel coordinates from the TOP-LEFT corner of the container (0,0 = top-left).**
+
+The SVG root `<g>` in `controller.ts` MUST use `translate(0, 0)` — NOT `translate(w/2, h/2)`.
+
+The old Bing Maps code used a center-origin SVG because Bing's pixel methods returned center-relative coordinates. MapLibre's `project()` returns top-left-relative coordinates. If the SVG root is translated to the center, every overlay element (flows, pins, pies) will be shifted right and down by half the container size.
+
+**Rule:** All SVG positioning that uses `map.project()`, `controller.pixel()`, or `$state.pixel()` expects the SVG coordinate origin at (0, 0) = top-left.
+
+```typescript
+// ❌ WRONG — creates offset between map and SVG overlay
+this._svgroot.att.translate(w / 2, h / 2);
+
+// ✅ CORRECT — SVG origin matches MapLibre's project() origin
+this._svgroot.att.translate(0, 0);
+```
+
+**Files that depend on top-left origin:**
+- `controller.ts` — SVG root transform
+- `shape.ts` — line and arc path generation via `map.project()`
+- `flow.ts` — mask rect positioning and FlowShape anchor translate
+- `pin.ts` — pin marker positioning and invalid pin placer
+- `pie.ts` — pie bubble positioning
+
+**Test file:** `test-overlay.html` in the project root demonstrates this visually with a toggle between center-origin (bug) and top-left-origin (fix).
+
+### 2. Coordinate Order Swap
 
 **Most common error!**
 ```typescript
@@ -342,7 +370,7 @@ map.setCenter([latitude, longitude]);
 map.setCenter([longitude, latitude]);
 ```
 
-### 2. Map Methods Changed
+### 3. Map Methods Changed
 
 MapLibre doesn't have these Bing methods:
 ```typescript
@@ -356,13 +384,13 @@ const width = container.clientWidth;
 const height = container.clientHeight;
 ```
 
-### 3. TypeScript Version Matters
+### 4. TypeScript Version Matters
 
 - **Must use TypeScript 4.9.5+** (not 3.6.3)
 - MapLibre type definitions use modern syntax
 - Older TypeScript can't parse MapLibre's `.d.ts` files
 
-### 4. No Default Export
+### 5. No Default Export
 
 ```typescript
 // ❌ Wrong
@@ -372,7 +400,7 @@ import maplibregl from 'maplibre-gl';
 import * as maplibregl from 'maplibre-gl';
 ```
 
-### 5. Power BI API Changes
+### 6. Power BI API Changes
 
 Version 5.1.0 changed some types:
 ```typescript
@@ -383,7 +411,7 @@ options.type === VisualUpdateType.Resize
 options.type === 2  // Resize value
 ```
 
-### 6. CSS Import Required
+### 7. CSS Import Required
 
 ```typescript
 // Must import MapLibre CSS
@@ -479,6 +507,16 @@ cd code && npm install
 2. Use specific location names: "Paris, France" not just "Paris"
 3. Try alternative geocoding service (Nominatim vs Photon)
 4. Check browser console for API errors
+
+### Issue: "SVG overlay (flows/pins/pies) not aligned with map"
+
+**Solution:**
+1. Check that the SVG root `<g>` uses `translate(0, 0)` in `controller.ts` `_resize()` — NOT `translate(w/2, h/2)`
+2. Check that `flow.ts` mask rect uses `.att.x(0).att.y(0)` — NOT `.att.x(-w/2).att.y(-h/2)`
+3. Check that `pin.ts` invalid pin placer uses top-left relative coords (e.g. `y: height - 20`) — NOT center-relative (e.g. `y: height/2 - 20`)
+4. Open `test-overlay.html` in a browser to visually confirm coordinate alignment
+
+**Root cause:** MapLibre's `map.project()` returns top-left-relative coordinates. If the SVG root is translated to the center, everything shifts by (w/2, h/2).
 
 ### Issue: "Build succeeds but visual crashes"
 
@@ -591,6 +629,7 @@ export function query(addr: string, then?: Func<ILocation, void>) {
 ### Code Review Checklist:
 
 - [ ] Coordinate order correct (lon, lat)?
+- [ ] SVG root origin at top-left (0,0), not center?
 - [ ] Error handling in place?
 - [ ] Performance acceptable (tested with 50+ flows)?
 - [ ] No hardcoded credentials?
@@ -649,6 +688,7 @@ export function query(addr: string, then?: Func<ILocation, void>) {
 - ✅ Upgraded to TypeScript 4.9.5
 - ✅ Upgraded to Power BI API 5.1.0
 - ✅ Removed all API key requirements
+- ✅ Fixed SVG overlay coordinate mismatch (center-origin → top-left-origin)
 - ⚠️ Removed aerial/satellite view
 
 **v1.4.9** (Previous)
