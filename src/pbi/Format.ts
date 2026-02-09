@@ -337,7 +337,7 @@ export class FormatDumper<T> {
   private _autofill(pname: keyof T, toggle: keyof T, values: FormatInstance[]): this {
     const binding = this._fmt.binding(pname);
     if (!binding) {
-      debugger;//should be a bug
+      return this;
     }
     this.metas([toggle]);
     const auto = meta(this._fmt, toggle), cat = __ctx.cat(binding.role);
@@ -349,7 +349,6 @@ export class FormatDumper<T> {
         properties: { [pname]: (auto && i.value === undefined) ? i.auto : (i.value || '') }
       });
     }
-    debugger;
     return this;
   }
 
@@ -358,7 +357,6 @@ export class FormatDumper<T> {
   public labels<O, R extends string>(bind: Binding<O, R>, label: keyof T, numeric: true): this;
   public labels<O, R extends string>(bind: Binding<O, R>, label: keyof T, para?: Func<FormatDumper<T>, void> | true): this {
     if (!this._fmt.binding(label)) {
-      debugger;
       return this;
     }
     const { autofill, toggle } = this._fmt.binding(label);
@@ -403,7 +401,7 @@ export class FormatDumper<T> {
     }
     const binding = this._fmt.binding(pname);
     if (!binding) {
-      debugger;//should be a bug
+      return this;
     }
     const cat = __ctx.cat(binding.role);
     if (!cat) {

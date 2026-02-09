@@ -148,10 +148,6 @@ class helper {
                     }
                 }
 
-                if (!arc) {
-                    debugger;
-                }
-
                 // Generate arc points in geographic coordinates (static)
                 var cnt = Math.max(Math.round(Math.abs(tcoord.x / 4)), 10);
                 var coords = arc(scoord, tcoord, cnt);

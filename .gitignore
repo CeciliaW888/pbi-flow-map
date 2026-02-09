@@ -25,5 +25,9 @@ Thumbs.db
 # Power BI specific
 Default EULA.pdf
 
+# Development/test files
+test-overlay.html
+scripts/
+
 .claude/
 

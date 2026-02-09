@@ -311,7 +311,6 @@ function resetWidth() {
     legend.rewidth({ invert, scale: $state.width, dmax });
   }
   else if ('unit' in weight) {
-    debugger;
     if (weight.unit === null) {
       weight.unit = dmin === dmax ? 3 / dmin : 25 / dmax;
     }

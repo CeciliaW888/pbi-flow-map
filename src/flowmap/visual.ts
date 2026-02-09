@@ -17,6 +17,10 @@ import { MapFormat, ILocation } from "../lava/maplibre";
 import * as app from '../lava/flowmap/app';
 import { keys, sum } from "d3";
 
+// Set to true to enable the on-screen debug overlay during development.
+// Must be false for production/AppSource builds.
+const DEBUG = false;
+
 type Role = 'Origin' | 'Dest' | 'width' | 'color' | 'OLati' | 'OLong' | 'DLati' | 'DLong' | 'OName' | 'DName' | 'Tooltip' | 'Label';
 type Read<T> = Func<number, T>;
 type Ctx = Context<Role, Format>;
@@ -108,16 +112,18 @@ export class Visual implements IVisual {
         }
         selex(this._target = options.element).sty.cursor('default');
 
-        // Debug overlay — shows update() calls and code paths
-        const debugBox = document.createElement('div');
-        debugBox.id = 'pbi-debug';
-        debugBox.style.cssText = 'position:absolute;top:8px;left:8px;z-index:9999;background:rgba(0,0,0,0.75);color:#0f0;font:9px/1.3 monospace;padding:4px 6px;border-radius:4px;max-height:30%;max-width:40%;overflow-y:auto;pointer-events:auto;';
-        debugBox.innerHTML = '<div style="color:#fff;font-weight:bold;margin-bottom:4px;">DEBUG: update() log</div>';
-        this._target.appendChild(debugBox);
-        this._debugBox = debugBox;
-        this._debugCount = 0;
-
-        app.$state.log = (msg: string) => this._dbg(msg, '#6cf'); // Pipe to debug box
+        // Debug overlay — shows update() calls and code paths.
+        // Controlled by the DEBUG flag at the top of this file.
+        if (DEBUG) {
+            const debugBox = document.createElement('div');
+            debugBox.id = 'pbi-debug';
+            debugBox.style.cssText = 'position:absolute;top:8px;left:8px;z-index:9999;background:rgba(0,0,0,0.75);color:#0f0;font:9px/1.3 monospace;padding:4px 6px;border-radius:4px;max-height:30%;max-width:40%;overflow-y:auto;pointer-events:auto;';
+            debugBox.innerHTML = '<div style="color:#fff;font-weight:bold;margin-bottom:4px;">DEBUG: update() log</div>';
+            this._target.appendChild(debugBox);
+            this._debugBox = debugBox;
+            this._debugCount = 0;
+            app.$state.log = (msg: string) => this._dbg(msg, '#6cf');
+        }
 
         tooltip.init(options);
         const ctx = this._ctx = new Context(options.host, new Format());

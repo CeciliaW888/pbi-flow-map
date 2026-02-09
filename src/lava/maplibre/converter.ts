@@ -134,7 +134,6 @@ export function anchorPixel(m: maplibregl.Map, bound: IBound): IPoint {
     let west = helper.lon2x(margin.west - 180, level);
     let width = m.getContainer().clientWidth;
     // MapLibre project() returns top-left origin (0,0 = top-left).
-    // Bing Maps returned center origin, which needed + width/2 here.
     let left = pix.x - west;
     let size = helper.mapSize(level);
     let half = east / 2 + west / 2;

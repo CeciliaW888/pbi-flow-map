@@ -220,7 +220,6 @@ export function partial<T>(a: T, keys: (keyof T)[]): Partial<T> {
 
 export function check(assert: any, msg: string) {
     if (!assert) {
-        debugger;
         console.log(msg);
     }
 }
