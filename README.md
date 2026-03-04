@@ -101,7 +101,6 @@ npx pbiviz package
 
 ```
 pbi-flow-map/
-├── code/
 ├── src/
 │   ├── lava/
 │   │   ├── maplibre/      # MapLibre GL JS integration
@@ -115,9 +114,8 @@ pbi-flow-map/
 ├── package.json
 ├── pbiviz.json
 ├── capabilities.json      # Visual metadata
-└── tsconfig.json
-├── README.md                  # This file
-└── CLAUDE.md                  # AI assistant instructions
+├── tsconfig.json
+└── README.md
 ```
 
 ---
@@ -270,7 +268,7 @@ If you find this visual useful:
 
 ---
 
-**Version**: 1.0.0.0
-**Last Updated**: February 2026
+**Version**: 2.0.0.0
+**Last Updated**: March 2026
 **Status**: ✅ Production Ready
 **Cost**: 🆓 Free Forever

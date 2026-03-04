@@ -30,7 +30,7 @@ export class Format {
     };
 
     color = {
-        item: { solid: { color: '#01B8AA' } },
+        item: { solid: { color: '#41A4FF' } },
         min: { solid: { color: '#99e3dd' } },
         max: { solid: { color: '#015c55' } },
         autofill: false,

@@ -126,6 +126,11 @@ export class Visual implements IVisual {
         }
 
         tooltip.init(options);
+        const selectionManager = options.host.createSelectionManager();
+        this._target.addEventListener('contextmenu', (event: MouseEvent) => {
+            selectionManager.showContextMenu({} as any, { x: event.clientX, y: event.clientY });
+            event.preventDefault();
+        });
         const ctx = this._ctx = new Context(options.host, new Format());
         ctx.fmt.width.bind('width', "item", "customize");
         ctx.fmt.color.bind("color", "item", 'customize', 'autofill', k => <Fill>{ solid: { color: ctx.palette(k) } });
@@ -483,6 +488,167 @@ export class Visual implements IVisual {
                 reset(config);
             }
         }
+    }
+
+    public getFormattingModel(): powerbi.visuals.FormattingModel {
+        const ctx = this._ctx, cfg = this._cfg;
+        if (!ctx || !ctx.meta) {
+            return { cards: [] };
+        }
+        const meta = ctx.meta;
+
+        type Slice = powerbi.visuals.FormattingSlice;
+        type Group = powerbi.visuals.FormattingGroup;
+        type Card  = powerbi.visuals.FormattingCard;
+
+        const d = (o: string, p: string) => ({ objectName: o, propertyName: p });
+
+        const sw = (o: string, p: string, v: boolean): Slice => ({
+            uid: `${o}_${p}`,
+            control: { type: 'ToggleSwitch', properties: { descriptor: d(o, p), value: !!v } } as any
+        });
+        const dd = (o: string, p: string, v: any): Slice => ({
+            uid: `${o}_${p}`,
+            control: { type: 'Dropdown', properties: { descriptor: d(o, p), value: v } } as any
+        });
+        const cp = (o: string, p: string, v: { solid: { color: string } }): Slice => ({
+            uid: `${o}_${p}`,
+            control: { type: 'ColorPicker', properties: { descriptor: d(o, p), value: { value: v.solid.color } } } as any
+        });
+        const nu = (o: string, p: string, v: number): Slice => ({
+            uid: `${o}_${p}`,
+            control: { type: 'NumUpDown', properties: { descriptor: d(o, p), value: v ?? 0 } } as any
+        });
+        const ti = (o: string, p: string, v: string): Slice => ({
+            uid: `${o}_${p}`,
+            control: { type: 'TextInput', properties: { descriptor: d(o, p), value: v || '', placeholder: '' } } as any
+        });
+        const grp = (uid: string, slices: Slice[]): Group => ({ uid: `${uid}_group`, displayName: '', slices });
+        const crd = (uid: string, name: string, slices: Slice[]): Card => ({ uid, displayName: name, groups: [grp(uid, slices)] });
+
+        // style
+        const styleSlices: Slice[] = [dd('style', 'style', meta.style.style)];
+        if ((cfg ? cfg.style : meta.style.style) === 'flow') {
+            styleSlices.push(dd('style', 'direction', meta.style.direction));
+            styleSlices.push(nu('style', 'limit', meta.style.limit));
+        }
+
+        // legend
+        const legendSlices: Slice[] = [
+            sw('legend', 'show', meta.legend.show),
+            dd('legend', 'position', meta.legend.position),
+            nu('legend', 'fontSize', meta.legend.fontSize),
+            ti('legend', 'color_label', meta.legend.color_label),
+            ti('legend', 'width_label', meta.legend.width_label),
+        ];
+
+        // color
+        const colorSlices: Slice[] = [cp('color', 'item', meta.color.item)];
+        if (ctx.cat('color')) {
+            if (ctx.type('color').numeric) {
+                colorSlices.push(sw('color', 'customize', meta.color.customize));
+                if (meta.color.customize) {
+                    colorSlices.push(cp('color', 'min', meta.color.min));
+                    colorSlices.push(cp('color', 'max', meta.color.max));
+                }
+            }
+        }
+
+        // width
+        const widthSlices: Slice[] = [];
+        if (!ctx.cat('width') && (!cfg || cfg.style !== 'flow')) {
+            widthSlices.push(nu('width', 'item', meta.width.item));
+        } else if (cfg && cfg.weight && cfg.weight.scale === null) {
+            widthSlices.push(sw('width', 'customize', meta.width.customize));
+            widthSlices.push(nu('width', 'item', meta.width.item));
+        } else if (cfg && cfg.weight && cfg.weight.scale === 'none') {
+            widthSlices.push(dd('width', 'scale', meta.width.scale));
+            widthSlices.push(nu('width', 'unit', meta.width.unit ?? 1));
+        } else {
+            widthSlices.push(dd('width', 'scale', meta.width.scale));
+            widthSlices.push(nu('width', 'min', meta.width.min));
+            widthSlices.push(nu('width', 'max', meta.width.max));
+        }
+
+        // bubble
+        const bubbleFor = meta.bubble.for || 'dest';
+        const bubbleSlices: Slice[] = [dd('bubble', 'for', bubbleFor)];
+        if (bubbleFor !== 'none') {
+            const showSlice = meta.bubble.slice !== false;
+            bubbleSlices.push(nu('bubble', 'scale', meta.bubble.scale));
+            bubbleSlices.push(sw('bubble', 'slice', showSlice));
+            if (!showSlice) {
+                bubbleSlices.push(cp('bubble', 'bubbleColor', meta.bubble.bubbleColor));
+            }
+            bubbleSlices.push(dd('bubble', 'label', meta.bubble.label));
+            if (meta.bubble.label !== 'hide' && meta.bubble.label !== 'none') {
+                bubbleSlices.push(nu('bubble', 'labelOpacity', meta.bubble.labelOpacity));
+                bubbleSlices.push(cp('bubble', 'labelColor', meta.bubble.labelColor));
+            }
+        }
+
+        // valueFormat
+        const vf = meta.valueFormat;
+        const vfSlices: Slice[] = [
+            dd('valueFormat', 'sort', vf.sort),
+            nu('valueFormat', 'top', vf.top),
+            dd('valueFormat', 'notation', vf.notation),
+        ];
+        if (vf.notation === 'exp' || vf.notation === 'decSi') {
+            vfSlices.push(nu('valueFormat', 'precSig', vf.precSig));
+        } else if (vf.notation === 'per') {
+            vfSlices.push(sw('valueFormat', 'fix', vf.fix));
+            vfSlices.push(nu('valueFormat', vf.fix ? 'precFix' : 'precSig', vf.fix ? vf.precFix : vf.precSig));
+            vfSlices.push(sw('valueFormat', 'comma', vf.comma));
+        } else if (vf.notation === 'dec') {
+            vfSlices.push(dd('valueFormat', 'unit', vf.unit));
+            vfSlices.push(sw('valueFormat', 'fix', vf.fix));
+            vfSlices.push(nu('valueFormat', vf.fix ? 'precFix' : 'precSig', vf.fix ? vf.precFix : vf.precSig));
+            vfSlices.push(sw('valueFormat', 'comma', vf.comma));
+        }
+        vfSlices.push(ti('valueFormat', 'prefix', vf.prefix));
+        vfSlices.push(ti('valueFormat', 'postfix', vf.postfix));
+
+        // mapControl
+        const mc = meta.mapControl as any;
+        const mcSlices: Slice[] = [
+            dd('mapControl', 'type', mc.type),
+            dd('mapControl', 'lang', mc.lang),
+            sw('mapControl', 'pan', mc.pan),
+            sw('mapControl', 'zoom', mc.zoom),
+            sw('mapControl', 'autoFit', mc.autoFit),
+        ];
+
+        // mapElement
+        const me = meta.mapElement as any;
+        const meSlices: Slice[] = [
+            sw('mapElement', 'forest', me.forest),
+            dd('mapElement', 'road', me.road),
+            sw('mapElement', 'label', me.label),
+            sw('mapElement', 'city', me.city),
+            sw('mapElement', 'icon', me.icon),
+            sw('mapElement', 'building', me.building),
+            sw('mapElement', 'area', me.area),
+        ];
+
+        // advance
+        const advSlices: Slice[] = meta.advance.relocate
+            ? [sw('advance', 'relocate', meta.advance.relocate), sw('advance', 'located', meta.advance.located), sw('advance', 'unlocated', meta.advance.unlocated)]
+            : [sw('advance', 'cache', meta.advance.cache), sw('advance', 'relocate', meta.advance.relocate)];
+
+        return {
+            cards: [
+                crd('style',       'Visual style',  styleSlices),
+                crd('legend',      'Legend',        legendSlices),
+                crd('color',       'Color',         colorSlices),
+                crd('width',       'Width',         widthSlices),
+                crd('bubble',      'Bubble',        bubbleSlices),
+                crd('valueFormat', 'Detail format', vfSlices),
+                crd('mapControl',  'Map control',   mcSlices),
+                crd('mapElement',  'Map element',   meSlices),
+                crd('advance',     'Advanced',      advSlices),
+            ]
+        };
     }
 
     public enumerateObjectInstances(options: EnumerateVisualObjectInstancesOptions): VisualObjectInstance[] {

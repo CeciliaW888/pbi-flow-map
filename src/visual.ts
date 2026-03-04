@@ -20,6 +20,10 @@ export class Visual implements IVisual {
         this._visual.update(options);
     }
 
+    public getFormattingModel(): powerbi.visuals.FormattingModel {
+        return this._visual.getFormattingModel();
+    }
+
     public enumerateObjectInstances(options: EnumerateVisualObjectInstancesOptions): VisualObjectInstance[] | VisualObjectInstanceEnumerationObject {
         return this._visual.enumerateObjectInstances(options);
     }

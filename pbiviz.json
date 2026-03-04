@@ -4,12 +4,12 @@
         "displayName": "Flow Map (MapLibre)",
         "guid": "flowmapMapLibreB7F3A9D2E4C6",
         "visualClassName": "Visual",
-        "version": "1.0.0.0",
+        "version": "2.0.0.0",
         "description": "Flowmap is a diagram that visualizes the movement of objects from one location to another.",
         "supportUrl": "https://github.com/CeciliaW888/pbi-flow-map",
         "gitHubUrl": "https://github.com/CeciliaW888/pbi-flow-map"
       },
-    "apiVersion": "5.1.0",
+    "apiVersion": "5.10.0",
     "author": {
         "name": "Cecilia WANG",
         "email": "ceciliawang621@gmail.com"

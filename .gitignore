@@ -26,18 +26,15 @@ Thumbs.db
 Default EULA.pdf
 
 # Development/test files
-test-overlay.html
 scripts/
 CLAUDE.md
 APPSOURCE_CHECKLIST.md
 tslint.json
 
-# Old/replaced files
 docs/
-dist/sample.xlsx
-
+submission/
 .claude/
 
-publish_guide/
 
-submission/
+# Excel temp/lock files
+dist/~$*

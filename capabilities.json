@@ -1,5 +1,15 @@
 {
-    "privileges": [],
+    "privileges": [
+        {
+            "name": "WebAccess",
+            "essential": true,
+            "parameters": [
+                "https://*.tile.openstreetmap.org",
+                "https://photon.komoot.io",
+                "https://nominatim.openstreetmap.org"
+            ]
+        }
+    ],
     "dataRoles": [
         {
             "displayName": "Origin",
