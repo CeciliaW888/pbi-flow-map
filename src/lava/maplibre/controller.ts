@@ -168,20 +168,37 @@ var capability = {
 /**
  * Creates a MapLibre style configuration based on map format settings
  */
+function cartoTileUrl(style: string): string[] {
+  const subdomains = ['a', 'b', 'c', 'd'];
+  return subdomains.map(s =>
+    `https://${s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}@2x.png`
+  );
+}
+
 function createMapStyle(fmt: IMapFormat): maplibregl.StyleSpecification {
-  // Base style using free OpenStreetMap tiles
+  // Select Carto basemap style based on map type
+  let tileStyle: string;
+  switch (fmt.type) {
+    case 'canvasDark':
+      tileStyle = 'dark_all';
+      break;
+    case 'grayscale':
+    case 'canvasLight':
+      tileStyle = 'light_all';
+      break;
+    default:
+      tileStyle = 'rastertiles/voyager';
+      break;
+  }
+
   const baseStyle: maplibregl.StyleSpecification = {
     version: 8,
     sources: {
-      'osm': {
+      'carto': {
         type: 'raster',
-        tiles: [
-          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
-        ],
+        tiles: cartoTileUrl(tileStyle),
         tileSize: 256,
-        attribution: '© OpenStreetMap contributors'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
       }
     },
     layers: []
@@ -201,25 +218,12 @@ function createMapStyle(fmt: IMapFormat): maplibregl.StyleSpecification {
 
   // Add base raster layer
   baseStyle.layers.push({
-    id: 'osm-tiles',
+    id: 'carto-tiles',
     type: 'raster',
-    source: 'osm',
+    source: 'carto',
     minzoom: 0,
     maxzoom: 19
   });
-
-  // Apply grayscale or dark filters
-  if (fmt.type === 'grayscale') {
-    (baseStyle.layers[0] as any).paint = {
-      'raster-saturation': -1
-    };
-  } else if (fmt.type === 'canvasDark') {
-    (baseStyle.layers[0] as any).paint = {
-      'raster-brightness-min': 0,
-      'raster-brightness-max': 0.3,
-      'raster-saturation': -0.7
-    };
-  }
 
   return baseStyle;
 }

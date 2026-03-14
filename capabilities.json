@@ -4,7 +4,7 @@
             "name": "WebAccess",
             "essential": true,
             "parameters": [
-                "https://*.tile.openstreetmap.org",
+                "https://*.basemaps.cartocdn.com",
                 "https://photon.komoot.io",
                 "https://nominatim.openstreetmap.org"
             ]
