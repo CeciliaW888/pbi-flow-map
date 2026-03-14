@@ -166,39 +166,72 @@ var capability = {
 }
 
 /**
- * Creates a MapLibre style configuration based on map format settings
+ * Tile provider definitions with fallback support.
+ * Providers are tried in order; if tiles fail to load from one, the next is used.
  */
-function cartoTileUrl(style: string): string[] {
-  const subdomains = ['a', 'b', 'c', 'd'];
-  return subdomains.map(s =>
-    `https://${s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}@2x.png`
-  );
+interface TileProvider {
+  name: string;
+  getTiles(mapType: string): string[];
+  tileSize: number;
+  attribution: string;
+}
+
+const tileProviders: TileProvider[] = [
+  {
+    name: 'carto',
+    getTiles(mapType: string): string[] {
+      let style: string;
+      switch (mapType) {
+        case 'canvasDark':  style = 'dark_all'; break;
+        case 'grayscale':
+        case 'canvasLight': style = 'light_all'; break;
+        default:            style = 'rastertiles/voyager'; break;
+      }
+      return ['a', 'b', 'c', 'd'].map(s =>
+        `https://${s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}@2x.png`
+      );
+    },
+    tileSize: 256,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  },
+  {
+    name: 'osm',
+    getTiles(_mapType: string): string[] {
+      return ['a', 'b', 'c'].map(s =>
+        `https://${s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
+      );
+    },
+    tileSize: 256,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }
+];
+
+// Track which provider to use (persists across map recreations)
+let currentProviderIndex = 0;
+
+function getCurrentProvider(): TileProvider {
+  return tileProviders[currentProviderIndex] || tileProviders[0];
+}
+
+function switchToNextProvider(): TileProvider | null {
+  if (currentProviderIndex + 1 < tileProviders.length) {
+    currentProviderIndex++;
+    return tileProviders[currentProviderIndex];
+  }
+  return null;
 }
 
 function createMapStyle(fmt: IMapFormat): maplibregl.StyleSpecification {
-  // Select Carto basemap style based on map type
-  let tileStyle: string;
-  switch (fmt.type) {
-    case 'canvasDark':
-      tileStyle = 'dark_all';
-      break;
-    case 'grayscale':
-    case 'canvasLight':
-      tileStyle = 'light_all';
-      break;
-    default:
-      tileStyle = 'rastertiles/voyager';
-      break;
-  }
+  const provider = getCurrentProvider();
 
   const baseStyle: maplibregl.StyleSpecification = {
     version: 8,
     sources: {
-      'carto': {
+      'basemap': {
         type: 'raster',
-        tiles: cartoTileUrl(tileStyle),
-        tileSize: 256,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        tiles: provider.getTiles(fmt.type),
+        tileSize: provider.tileSize,
+        attribution: provider.attribution
       }
     },
     layers: []
@@ -216,14 +249,30 @@ function createMapStyle(fmt: IMapFormat): maplibregl.StyleSpecification {
     return baseStyle;
   }
 
-  // Add base raster layer
-  baseStyle.layers.push({
-    id: 'carto-tiles',
+  const layerPaint: Record<string, any> = {};
+
+  // OSM fallback needs CSS filters for grayscale/dark since it only has one style
+  if (provider.name === 'osm') {
+    if (fmt.type === 'grayscale' || fmt.type === 'canvasLight') {
+      layerPaint['raster-saturation'] = -1;
+    } else if (fmt.type === 'canvasDark') {
+      layerPaint['raster-brightness-min'] = 0;
+      layerPaint['raster-brightness-max'] = 0.3;
+      layerPaint['raster-saturation'] = -0.7;
+    }
+  }
+
+  const layer: any = {
+    id: 'basemap-tiles',
     type: 'raster',
-    source: 'carto',
+    source: 'basemap',
     minzoom: 0,
     maxzoom: 19
-  });
+  };
+  if (Object.keys(layerPaint).length > 0) {
+    layer.paint = layerPaint;
+  }
+  baseStyle.layers.push(layer);
 
   return baseStyle;
 }
@@ -349,6 +398,21 @@ export class Controller {
       this._map.off('resize', this._resizeHandler);
       this._map.remove();
     }
+
+    // Detect tile load errors and fall back to the next provider
+    let tileErrorCount = 0;
+    map.on('error', (e: any) => {
+      if (e?.error?.status === 403 || e?.error?.status === 429 || e?.error?.message?.includes('tile')) {
+        tileErrorCount++;
+        if (tileErrorCount >= 3) {
+          const next = switchToNextProvider();
+          if (next) {
+            console.warn(`Tile provider failed, switching to ${next.name}`);
+            setTimeout(() => this._createMap(), 0);
+          }
+        }
+      }
+    });
 
     // Set up event handlers
     map.on('load', () => {
