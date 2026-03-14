@@ -28,7 +28,6 @@ Default EULA.pdf
 # Development/test files
 scripts/
 CLAUDE.md
-APPSOURCE_CHECKLIST.md
 tslint.json
 
 docs/
