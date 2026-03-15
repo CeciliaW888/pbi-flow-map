@@ -37,3 +37,5 @@ submission/
 
 # Excel temp/lock files
 dist/~$*
+# Documentation (generated)
+.env
