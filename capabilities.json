@@ -5,6 +5,7 @@
             "essential": true,
             "parameters": [
                 "https://*.basemaps.cartocdn.com",
+                "https://*.tile.openstreetmap.org",
                 "https://photon.komoot.io",
                 "https://nominatim.openstreetmap.org"
             ]

@@ -164,6 +164,101 @@ pbi-flow-map/
 
 ---
 
+## Security & External Dependencies Review
+
+This section documents all external network activity and dependencies for technical review.
+
+### External Dependencies
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `maplibre-gl` | ^5.17.0 | Map rendering (client-side) |
+| `d3` | 5.12.0 | Flow visualization (client-side) |
+| `powerbi-visuals-api` | ~5.10.0 | Power BI integration (Microsoft official) |
+| `powerbi-visuals-utils-tooltiputils` | 2.4.0 | Tooltip support (Microsoft official) |
+| `clone`, `deepmerge`, `fast-deep-equal` | various | Pure utility functions, no network activity |
+
+All dependencies are open-source with permissive licenses (MIT/BSD). None include telemetry or analytics.
+
+### Outbound Network Calls
+
+The visual makes **only four categories** of outbound requests, all declared in `capabilities.json`:
+
+| Destination | Data Sent | When Triggered |
+|-------------|-----------|----------------|
+| `*.basemaps.cartocdn.com` | Tile z/x/y coordinates only | Map tile loading (primary) |
+| `*.tile.openstreetmap.org` | Tile z/x/y coordinates only | Map tile loading (fallback) |
+| `photon.komoot.io` | Location name string only | Geocoding (default service) |
+| `nominatim.openstreetmap.org` | Location name string only | Geocoding (alternative service) |
+
+**What is NOT sent externally:**
+- No Power BI report data, metrics, or measure values
+- No user account information or device identifiers
+- No report names, workspace info, or tenant data
+- No flow values, numeric columns, or color categories
+- No telemetry, analytics, or tracking data
+
+### Geocoding Data Flow
+
+When users provide location names (e.g. "Sydney, Australia") in the Origin/Destination fields, only that text string is sent to the geocoding API to resolve coordinates. Example request:
+
+```
+GET https://photon.komoot.io/api/?q=Sydney%2C%20Australia&limit=1
+```
+
+Users can **bypass geocoding entirely** by supplying Latitude/Longitude columns directly — no external calls are made for coordinate resolution in that case.
+
+Geocoding results are cached in-memory (up to 3000 entries) and optionally persisted via Power BI's native `persistProperties()` API. The cache toggle is available under Advanced settings.
+
+Rate limiting is enforced: 1 request/second for Nominatim, 1000ms minimum between all geocoding requests.
+
+### Map Tile Requests
+
+Tile requests are standard XYZ raster tile fetches containing only zoom level and tile coordinates. No report data is included. If the primary provider (Carto) fails (HTTP 403/429), the visual automatically falls back to OpenStreetMap tiles.
+
+### capabilities.json Permissions
+
+The visual requests a single permission — `WebAccess` — scoped to exactly four domains:
+
+```json
+{
+  "name": "WebAccess",
+  "essential": true,
+  "parameters": [
+    "https://*.basemaps.cartocdn.com",
+    "https://*.tile.openstreetmap.org",
+    "https://photon.komoot.io",
+    "https://nominatim.openstreetmap.org"
+  ]
+}
+```
+
+No wildcard or open-ended permissions are requested. All declared domains match actual usage in code.
+
+### Data Persistence
+
+The visual stores the following via Power BI's native `persistProperties()` API (not external storage):
+- Map viewport state (center, zoom)
+- Geocoding cache (location name to coordinates)
+- Manual location adjustments
+- Popup state
+
+No data is stored in `localStorage`, `sessionStorage`, cookies, or any external service.
+
+### Code Safety
+
+- No `eval()`, `Function()`, or dynamic code execution
+- No unsafe `innerHTML` in production code paths
+- No embedded API keys, secrets, or credentials
+- No CSP bypass techniques
+- TypeScript with strict type checking throughout
+
+### Privacy Policy
+
+See `privacy-policy.md` for the full privacy disclosure covering all third-party services.
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Visual doesn't load
