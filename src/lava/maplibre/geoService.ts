@@ -249,14 +249,9 @@ async function makeRequest(item: IGeocodeQueueItem) {
         await waitForRateLimit();
 
         const url = item.query.getGeocodingUrl();
-        const headers: HeadersInit = {};
-
-        // Nominatim requires User-Agent header
-        if (settings.GeocodingService === 'nominatim') {
-            headers['User-Agent'] = 'PowerBI-FlowMap-Visual/2.0';
-        }
-
-        const response = await fetch(url, { headers });
+        // Browsers forbid setting User-Agent from page code; Nominatim's
+        // usage policy is met by the 1 req/s rate limit above instead.
+        const response = await fetch(url);
 
         if (!response.ok) {
             throw new Error(`Geocoding request failed: ${response.status} ${response.statusText}`);

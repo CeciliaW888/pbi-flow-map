@@ -140,8 +140,18 @@ export class Visual implements IVisual {
             tooltip.add(group, arg => helper.pathTooltip(this._ctx, arg.data.leafs as number[], ctx.meta.style.direction));
         };
         app.events.doneGeocoding = locs => {
-            copy(locs, persist.geocode.value({}));
-            ctx.meta.advance.cache && persist.geocode.write(persist.geocode.value(), 10);
+            const all = persist.geocode.value({});
+            copy(locs, all);
+            // Cap what is persisted into report metadata: persistProperties
+            // payloads have size limits and large caches slow report saves.
+            // JS objects keep insertion order, so the first keys are oldest.
+            const cacheKeys = Object.keys(all);
+            if (cacheKeys.length > 1000) {
+                for (const k of cacheKeys.slice(0, cacheKeys.length - 1000)) {
+                    delete all[k];
+                }
+            }
+            ctx.meta.advance.cache && persist.geocode.write(all, 10);
         }
         app.events.popup.onChanged = addrs => persist.banner.write(addrs, 10);
         app.events.pin.onDrag = (addr, loc) => {
@@ -349,6 +359,7 @@ export class Visual implements IVisual {
 
     private _inited = false;
     private _initing = false;
+    private _loadError: HTMLElement = null;
     private _debugBox: HTMLElement;
     private _debugCount: number;
 
@@ -399,7 +410,24 @@ export class Visual implements IVisual {
             this._initing = true;
             const mapFmt = new MapFormat();
             override(ctx.original('mapElement'), override(ctx.original('mapControl'), mapFmt));
+            // If the map never finishes loading (blocked tiles, no WebGL, CSP),
+            // updates stay suppressed by _initing — surface that instead of
+            // leaving a silent blank visual forever.
+            const watchdog = window.setTimeout(() => {
+                if (this._initing && !this._loadError) {
+                    const note = document.createElement('div');
+                    this._loadError = note;
+                    note.textContent = 'The map failed to load. Check your network connection, then reload the report to retry.';
+                    note.style.cssText = 'position:absolute;top:40%;left:10%;right:10%;text-align:center;color:#888;font:13px sans-serif;';
+                    this._target.appendChild(note);
+                }
+            }, 20000);
             app.init(this._target, mapFmt, persist.banner.value() || [], ctl => {
+                clearTimeout(watchdog);
+                if (this._loadError) {
+                    this._loadError.remove();
+                    this._loadError = null;
+                }
                 const [center, zoom] = persist.map.value() || [null, null];
                 if (center) {
                     ctl.setCenterZoom({ latitude: center[1], longitude: center[0] }, zoom);

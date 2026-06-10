@@ -13,7 +13,7 @@ export class GeoQuery {
     }
 
     count() {
-        return this._addrs.length;
+        return this._addrs ? this._addrs.length : 0;
     }
 
     run(each: Func<ILocation, void>): this {

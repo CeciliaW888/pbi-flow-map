@@ -271,8 +271,6 @@ function addGroup(group: number[]) {
   resetColor();
   resetWidth();
   flows.reformat(true, true);
-  // DOM inspection: show what's actually in the SVG after rendering
-  $state.log(flows.debugDom());
   legend.resize();
   pies.reset(allValids);
   popups.repaint();

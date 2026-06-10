@@ -38,6 +38,7 @@ export class Persist<T> {
             try {
               this._text = text.slice(13);
               this._value = JSON.parse(this._text);
+              return dirty;
             } catch (e2) {
               this._text = null;
               return false;

@@ -461,12 +461,10 @@ export class Controller {
       this._canvas && container.appendChild(this._canvas.node());
       this._svg && container.appendChild(this._svg.node());
 
-      if (!this._map) {
-        this._map = map;
-        this._resize();
-      } else {
-        this._map = map;
-      }
+      this._map = map;
+      // Also needed on recreation: the container may have resized while the
+      // replacement map was loading, leaving overlay mask/canvas sizes stale.
+      this._resize();
     });
 
     // Store handlers for cleanup

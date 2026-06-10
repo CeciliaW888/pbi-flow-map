@@ -187,14 +187,15 @@ export function anchor(data: ILocation[]): ILocation & { positive: boolean } {
     let positive = psum + nsum > 0;
     return {
         longitude: positive ? psum / pcnt : nsum / ncnt,
-        latitude: latsum / data.length,
+        // average over valid entries only; null entries were skipped above
+        latitude: latsum / (pcnt + ncnt),
         positive: positive
     }
 }
 
 export function area(data: ILocation[], level = 20): IArea {
     let area = bound(data) as any as IArea;
-    if (!bound) {
+    if (!area) {
         return null;
     }
     let offsets = area.offsets;
@@ -297,14 +298,5 @@ namespace helper {
         if (lon < -180) lon = -180;
         if (lon > 180) lon = 180;
         return _map2Screen((lon + 180) / 360, level);
-    }
-
-    export function loc(pixelX: number, pixelY: number, level: number): ILocation {
-        var mapSize = mapSize(level);
-        var x = Math.min(pixelX, mapSize - 1) / mapSize - 0.5;
-        var y = 0.5 - Math.min(pixelY, mapSize - 1) / mapSize;
-        var latitude = 90 - 360 * Math.atan(Math.exp(-y * 2 * Math.PI)) / Math.PI;
-        var longitude = 360 * x;
-        return { latitude, longitude };
     }
 }

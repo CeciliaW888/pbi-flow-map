@@ -433,7 +433,6 @@
             "displayName": "Map control",
             "properties": {
                 "type": { "displayName": "Type", "type": { "enumeration": [
-                    {"displayName": "Aerial", "value": "aerial"},
                     {"displayName": "Color", "value": "road"},
                     {"displayName": "Gray", "value": "grayscale"},
                     {"displayName": "Dark", "value": "canvasDark"},

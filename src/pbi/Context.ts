@@ -110,8 +110,12 @@ export class Context<R extends string, F> {
     }
 
     public data<T = powerbi.PrimitiveValue>(r: R): T[] {
-        const c = first(this._view.categorical.values, c => c.source.roles[r], null)
-            || first(this._view.categorical.categories, c => c.source.roles[r], null);
+        const cat = this._view && this._view.categorical;
+        if (!cat) {
+            return null;
+        }
+        const c = first(cat.values || [], c => c.source.roles[r], null)
+            || first(cat.categories || [], c => c.source.roles[r], null);
         return c ? c.values as any : null;
     }
 
@@ -129,12 +133,12 @@ export class Context<R extends string, F> {
             return null;
         }
         let result = [] as PColumn[];
-        for (let col of view.categorical.categories) {
+        for (let col of view.categorical.categories || []) {
             if (col.source.roles[role]) {
                 result.push(col);
             }
         }
-        for (let col of view.categorical.values) {
+        for (let col of view.categorical.values || []) {
             if (col.source.roles[role]) {
                 result.push(col);
             }
@@ -178,8 +182,9 @@ export class Context<R extends string, F> {
         if (this._rows !== null) {
             return this._rows;
         }
-        if (this._view && this._view.categorical.categories[0]) {
-            this._rows = sequence(0, this._view.categorical.categories[0].values.length);
+        const cats = this._view && this._view.categorical && this._view.categorical.categories;
+        if (cats && cats[0]) {
+            this._rows = sequence(0, cats[0].values.length);
         }
         else {
             this._rows = [];
@@ -209,8 +214,12 @@ export class Context<R extends string, F> {
     }
 
     public reader<T = powerbi.PrimitiveValue>(r: R): Func<number, T> {
-        let c = first(this._view.categorical.values, c => c.source.roles[r], null)
-            || first(this._view.categorical.categories, c => c.source.roles[r], null);
+        const cat = this._view && this._view.categorical;
+        if (!cat) {
+            return null;
+        }
+        let c = first(cat.values || [], c => c.source.roles[r], null)
+            || first(cat.categories || [], c => c.source.roles[r], null);
         if (c) {
             return r => (c.values[r] as any as T);
         }
