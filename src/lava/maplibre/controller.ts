@@ -171,7 +171,10 @@ var capability = {
  */
 interface TileProvider {
   name: string;
+  label: string;
   getTiles(mapType: string): string[];
+  // Highest zoom the server has tiles for; MapLibre overzooms beyond it.
+  getMaxzoom(mapType: string): number;
   tileSize: number;
   attribution: string;
 }
@@ -179,6 +182,7 @@ interface TileProvider {
 const tileProviders: TileProvider[] = [
   {
     name: 'carto',
+    label: 'CARTO',
     getTiles(mapType: string): string[] {
       let style: string;
       switch (mapType) {
@@ -191,16 +195,40 @@ const tileProviders: TileProvider[] = [
         `https://${s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}@2x.png`
       );
     },
+    getMaxzoom: () => 19,
     tileSize: 256,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
   },
   {
+    name: 'esri',
+    label: 'Esri',
+    getTiles(mapType: string): string[] {
+      let service: string;
+      switch (mapType) {
+        case 'canvasDark':  service = 'Canvas/World_Dark_Gray_Base'; break;
+        case 'grayscale':
+        case 'canvasLight': service = 'Canvas/World_Light_Gray_Base'; break;
+        default:            service = 'World_Street_Map'; break;
+      }
+      return [`https://server.arcgisonline.com/ArcGIS/rest/services/${service}/MapServer/tile/{z}/{y}/{x}`];
+    },
+    // Esri gray canvases only publish tiles up to z16
+    getMaxzoom: t => (t === 'canvasDark' || t === 'grayscale' || t === 'canvasLight') ? 16 : 19,
+    tileSize: 256,
+    attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors'
+  },
+  {
+    // Last resort only: OSM serves "you are blocked" notices as ordinary
+    // HTTP-200 image tiles, which error-based fallback cannot detect — so
+    // the chain must never *rely* on OSM, merely end with it.
     name: 'osm',
+    label: 'OpenStreetMap',
     getTiles(_mapType: string): string[] {
       return ['a', 'b', 'c'].map(s =>
         `https://${s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
       );
     },
+    getMaxzoom: () => 19,
     tileSize: 256,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }
@@ -231,6 +259,7 @@ function createMapStyle(fmt: IMapFormat): maplibregl.StyleSpecification {
         type: 'raster',
         tiles: provider.getTiles(fmt.type),
         tileSize: provider.tileSize,
+        maxzoom: provider.getMaxzoom(fmt.type),
         attribution: provider.attribution
       }
     },
@@ -399,15 +428,26 @@ export class Controller {
       this._map.remove();
     }
 
-    // Detect tile load errors and fall back to the next provider
+    // Detect tile load errors and fall back to the next provider.
+    // Count ANY repeated failure (HTTP 4xx/5xx, network/CSP blocks with no
+    // status, source errors) — not just 403/429, which misses blocked fetches.
     let tileErrorCount = 0;
+    let switching = false;
     map.on('error', (e: any) => {
-      if (e?.error?.status === 403 || e?.error?.status === 429 || e?.error?.message?.includes('tile')) {
+      const status = e?.error?.status;
+      const message = typeof e?.error?.message === 'string' ? e.error.message : '';
+      const isTileError =
+        e?.sourceId === 'basemap' ||
+        (typeof status === 'number' && status >= 400) ||
+        /tile|fetch|network|abort|load/i.test(message);
+      if (isTileError && !switching) {
         tileErrorCount++;
         if (tileErrorCount >= 3) {
           const next = switchToNextProvider();
           if (next) {
-            console.warn(`Tile provider failed, switching to ${next.name}`);
+            switching = true;
+            console.warn(`Tile provider failed, switching to ${next.label}`);
+            this._notice(`Map tiles unavailable — switched to ${next.label}`);
             setTimeout(() => this._createMap(), 0);
           }
         }
@@ -444,6 +484,21 @@ export class Controller {
   private _moveHandler: () => void;
   private _moveEndHandler: () => void;
   private _resizeHandler: () => void;
+
+  // Transient on-map note so tile-provider fallbacks are visible to the user
+  // (tile failures are otherwise silent and hard to capture).
+  private _notice(text: string) {
+    if (!this._div) {
+      return;
+    }
+    const note = document.createElement('div');
+    note.textContent = text;
+    note.style.cssText = 'position:absolute;left:8px;bottom:24px;z-index:10;' +
+      'background:rgba(255,255,255,0.92);color:#444;font:11px sans-serif;' +
+      'padding:3px 8px;border-radius:3px;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,0.25);';
+    this._div.appendChild(note);
+    setTimeout(() => note.remove(), 10000);
+  }
 
   private _viewChange(end = false) {
     if (!this._map) return;

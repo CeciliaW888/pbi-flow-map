@@ -6,6 +6,7 @@
             "parameters": [
                 "https://*.basemaps.cartocdn.com",
                 "https://*.tile.openstreetmap.org",
+                "https://server.arcgisonline.com",
                 "https://photon.komoot.io",
                 "https://nominatim.openstreetmap.org"
             ]
