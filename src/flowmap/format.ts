@@ -33,7 +33,9 @@ export class Format {
         item: { solid: { color: '#41A4FF' } },
         min: { solid: { color: '#99e3dd' } },
         max: { solid: { color: '#015c55' } },
-        autofill: false,
+        // Must be true so a categorical Color field yields distinct palette
+        // colors without per-item setup (GitHub issue #1).
+        autofill: true,
         customize: true
     };
 

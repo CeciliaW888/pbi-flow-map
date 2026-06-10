@@ -552,6 +552,31 @@ export class Visual implements IVisual {
                     colorSlices.push(cp('color', 'max', meta.color.max));
                 }
             }
+            else {
+                colorSlices.push(sw('color', 'customize', meta.color.customize));
+                if (meta.color.customize) {
+                    colorSlices.push(sw('color', 'autofill', meta.color.autofill));
+                    // Per-category pickers need a data-bound selector so each
+                    // override persists against its own category value.
+                    const cat = ctx.cat('color');
+                    const rows = cat.distincts();
+                    const labels = cat.row2label(rows);
+                    const itemOf = ctx.fmt.color.item('item');
+                    for (const r of rows) {
+                        colorSlices.push({
+                            uid: `color_item_${r}`,
+                            displayName: labels[r],
+                            control: {
+                                type: 'ColorPicker',
+                                properties: {
+                                    descriptor: { objectName: 'color', propertyName: 'item', selector: cat.selector(r) },
+                                    value: { value: itemOf(r) }
+                                }
+                            } as any
+                        });
+                    }
+                }
+            }
         }
 
         // width
