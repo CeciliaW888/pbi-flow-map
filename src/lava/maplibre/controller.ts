@@ -23,7 +23,9 @@ export interface IMapControl {
   type: 'hidden' | 'aerial' | 'road' | 'grayscale' | 'canvasDark' | 'canvasLight',
   lang: string,
   pan: boolean,
-  zoom: boolean
+  zoom: boolean,
+  provider: BasemapProvider,
+  apiKey: string
 }
 
 export interface IMapFormat extends IMapControl, IMapElement { }
@@ -46,6 +48,8 @@ export function pixel(map: maplibregl.Map, loc: ILocation): IPoint {
 export class MapFormat implements IMapFormat {
   type = 'road' as 'aerial' | 'road' | 'grayscale' | 'canvasDark' | 'canvasLight';
   lang = 'default';
+  provider = 'openfreemap' as BasemapProvider;
+  apiKey = '';
   pan = true;
   zoom = true;
   city = false;
@@ -70,7 +74,7 @@ export class MapFormat implements IMapFormat {
   }
 
   public static control<T>(fmt: MapFormat, extra: T): IMapControl & T {
-    let result = partial(fmt, ['type', 'lang', 'pan', 'zoom']) as any;
+    let result = partial(fmt, ['type', 'lang', 'provider', 'apiKey', 'pan', 'zoom']) as any;
     for (let key in extra) {
       result[key] = extra[key];
     }
@@ -166,144 +170,90 @@ var capability = {
 }
 
 /**
- * Tile provider definitions with fallback support.
- * Providers are tried in order; if tiles fail to load from one, the next is used.
+ * Basemap providers.
+ *
+ * OpenFreeMap is the default: free, no key, commercial use allowed.
+ * CARTO is opt-in and needs the report author's own API key — since Aug 2026
+ * CARTO serves keyless requests as HTTP-200 "API KEY REQUIRED" watermark
+ * tiles, which no error-based fallback can detect.
+ *
+ * We deliberately do NOT fall back to other keyless tile servers (Esri legacy
+ * MapServer, OSM): their terms don't cover this use, and they too signal
+ * refusal with ordinary-looking image tiles. If the basemap fails, the visual
+ * shows a blank background plus a visible notice, and flows still render.
  */
-interface TileProvider {
-  name: string;
-  label: string;
-  getTiles(mapType: string): string[];
-  // Highest zoom the server has tiles for; MapLibre overzooms beyond it.
-  getMaxzoom(mapType: string): number;
-  tileSize: number;
-  attribution: string;
-}
+export type BasemapProvider = 'openfreemap' | 'carto';
 
-const tileProviders: TileProvider[] = [
-  {
-    name: 'carto',
-    label: 'CARTO',
-    getTiles(mapType: string): string[] {
-      let style: string;
-      switch (mapType) {
-        case 'canvasDark':  style = 'dark_all'; break;
-        case 'grayscale':
-        case 'canvasLight': style = 'light_all'; break;
-        default:            style = 'rastertiles/voyager'; break;
-      }
-      return ['a', 'b', 'c', 'd'].map(s =>
-        `https://${s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}@2x.png`
-      );
-    },
-    getMaxzoom: () => 19,
-    tileSize: 256,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  },
-  {
-    name: 'esri',
-    label: 'Esri',
-    getTiles(mapType: string): string[] {
-      let service: string;
-      switch (mapType) {
-        case 'canvasDark':  service = 'Canvas/World_Dark_Gray_Base'; break;
-        case 'grayscale':
-        case 'canvasLight': service = 'Canvas/World_Light_Gray_Base'; break;
-        default:            service = 'World_Street_Map'; break;
-      }
-      return [`https://server.arcgisonline.com/ArcGIS/rest/services/${service}/MapServer/tile/{z}/{y}/{x}`];
-    },
-    // Esri gray canvases only publish tiles up to z16
-    getMaxzoom: t => (t === 'canvasDark' || t === 'grayscale' || t === 'canvasLight') ? 16 : 19,
-    tileSize: 256,
-    attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap contributors'
-  },
-  {
-    // Last resort only: OSM serves "you are blocked" notices as ordinary
-    // HTTP-200 image tiles, which error-based fallback cannot detect — so
-    // the chain must never *rely* on OSM, merely end with it.
-    name: 'osm',
-    label: 'OpenStreetMap',
-    getTiles(_mapType: string): string[] {
-      return ['a', 'b', 'c'].map(s =>
-        `https://${s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
-      );
-    },
-    getMaxzoom: () => 19,
-    tileSize: 256,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+const CARTO_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
+  '&copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+function openFreeMapStyleUrl(mapType: string): string {
+  let style: string;
+  switch (mapType) {
+    case 'canvasDark':  style = 'dark'; break;
+    case 'grayscale':
+    case 'canvasLight': style = 'positron'; break;
+    default:            style = 'liberty'; break;
   }
-];
-
-// Track which provider to use (persists across map recreations)
-let currentProviderIndex = 0;
-
-function getCurrentProvider(): TileProvider {
-  return tileProviders[currentProviderIndex] || tileProviders[0];
+  return `https://tiles.openfreemap.org/styles/${style}`;
 }
 
-function switchToNextProvider(): TileProvider | null {
-  if (currentProviderIndex + 1 < tileProviders.length) {
-    currentProviderIndex++;
-    return tileProviders[currentProviderIndex];
+function cartoStyle(mapType: string, apiKey: string): maplibregl.StyleSpecification {
+  let style: string;
+  switch (mapType) {
+    case 'canvasDark':  style = 'dark_all'; break;
+    case 'grayscale':
+    case 'canvasLight': style = 'light_all'; break;
+    default:            style = 'rastertiles/voyager'; break;
   }
-  return null;
-}
-
-function createMapStyle(fmt: IMapFormat): maplibregl.StyleSpecification {
-  const provider = getCurrentProvider();
-
-  const baseStyle: maplibregl.StyleSpecification = {
+  const key = encodeURIComponent(apiKey);
+  return {
     version: 8,
     sources: {
       'basemap': {
         type: 'raster',
-        tiles: provider.getTiles(fmt.type),
-        tileSize: provider.tileSize,
-        maxzoom: provider.getMaxzoom(fmt.type),
-        attribution: provider.attribution
+        tiles: ['a', 'b', 'c', 'd'].map(s =>
+          `https://${s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}@2x.png?key=${key}`
+        ),
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: CARTO_ATTRIBUTION
       }
     },
-    layers: []
+    layers: [{ id: 'basemap-tiles', type: 'raster', source: 'basemap', minzoom: 0, maxzoom: 19 }]
   };
+}
 
-  // Handle hidden map type
-  if (fmt.type === 'hidden') {
-    baseStyle.layers = [{
-      id: 'background',
-      type: 'background',
-      paint: {
-        'background-color': '#FFFFFF'
-      }
-    }];
-    return baseStyle;
-  }
-
-  const layerPaint: Record<string, any> = {};
-
-  // OSM fallback needs CSS filters for grayscale/dark since it only has one style
-  if (provider.name === 'osm') {
-    if (fmt.type === 'grayscale' || fmt.type === 'canvasLight') {
-      layerPaint['raster-saturation'] = -1;
-    } else if (fmt.type === 'canvasDark') {
-      layerPaint['raster-brightness-min'] = 0;
-      layerPaint['raster-brightness-max'] = 0.3;
-      layerPaint['raster-saturation'] = -0.7;
-    }
-  }
-
-  const layer: any = {
-    id: 'basemap-tiles',
-    type: 'raster',
-    source: 'basemap',
-    minzoom: 0,
-    maxzoom: 19
+function blankStyle(): maplibregl.StyleSpecification {
+  return {
+    version: 8,
+    sources: {},
+    layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#FFFFFF' } }]
   };
-  if (Object.keys(layerPaint).length > 0) {
-    layer.paint = layerPaint;
-  }
-  baseStyle.layers.push(layer);
+}
 
-  return baseStyle;
+// The basemap (provider + map type + key) whose style failed to load. Kept
+// across map recreations so we don't retry a dead server on every format
+// change, but a different provider/type/key gets a fresh attempt.
+let failedBasemap: string = null;
+
+function basemapId(fmt: IMapFormat): string {
+  return `${resolveProvider(fmt)}|${fmt.type}|${(fmt.apiKey || '').trim()}`;
+}
+
+/** Effective provider: CARTO only when chosen AND a key is supplied. */
+function resolveProvider(fmt: IMapFormat): BasemapProvider {
+  return fmt.provider === 'carto' && (fmt.apiKey || '').trim() ? 'carto' : 'openfreemap';
+}
+
+function createMapStyle(fmt: IMapFormat): maplibregl.StyleSpecification | string {
+  if (fmt.type === 'hidden' || failedBasemap === basemapId(fmt)) {
+    return blankStyle();
+  }
+  if (resolveProvider(fmt) === 'carto') {
+    return cartoStyle(fmt.type, fmt.apiKey.trim());
+  }
+  return openFreeMapStyleUrl(fmt.type);
 }
 
 export interface IListener {
@@ -314,6 +264,7 @@ export interface IListener {
 export class Controller {
   private _div: HTMLDivElement;
   private _map: Map;
+  private _pending: Map;
   private _fmt: IMapFormat;
   private _svg: ISelex;
   private _svgroot: ISelex;
@@ -397,7 +348,7 @@ export class Controller {
     this._svgroot = this._svg.append('g').att.id('root');
   }
 
-  private _createMap(): Map {
+  private _createMap(then?: Action<Map>): Map {
     const style = createMapStyle(this._fmt);
 
     const mapOptions: maplibregl.MapOptions = {
@@ -420,6 +371,13 @@ export class Controller {
 
     const map = new maplibregl.Map(mapOptions);
 
+    // A map whose style never loaded was never promoted to _map; drop it so
+    // its canvas doesn't linger under the replacement.
+    if (this._pending && this._pending !== this._map) {
+      this._pending.remove();
+    }
+    this._pending = map;
+
     // Remove old event handlers if map exists
     if (this._map) {
       this._map.off('move', this._moveHandler);
@@ -428,31 +386,26 @@ export class Controller {
       this._map.remove();
     }
 
-    // Detect tile load errors and fall back to the next provider.
-    // Count ANY repeated failure (HTTP 4xx/5xx, network/CSP blocks with no
-    // status, source errors) — not just 403/429, which misses blocked fetches.
-    let tileErrorCount = 0;
+    // A style URL that fails to load means 'load' never fires, which would
+    // leave the visual stuck with no flows. Detect that and rebuild on a blank
+    // background so the data still renders, with a visible explanation.
+    let styleLoaded = false;
     let switching = false;
+    map.on('style.load', () => { styleLoaded = true; });
     map.on('error', (e: any) => {
-      const status = e?.error?.status;
-      const message = typeof e?.error?.message === 'string' ? e.error.message : '';
-      const isTileError =
-        e?.sourceId === 'basemap' ||
-        (typeof status === 'number' && status >= 400) ||
-        /tile|fetch|network|abort|load/i.test(message);
-      if (isTileError && !switching) {
-        tileErrorCount++;
-        if (tileErrorCount >= 3) {
-          const next = switchToNextProvider();
-          if (next) {
-            switching = true;
-            console.warn(`Tile provider failed, switching to ${next.label}`);
-            this._notice(`Map tiles unavailable — switched to ${next.label}`);
-            setTimeout(() => this._createMap(), 0);
-          }
-        }
+      if (styleLoaded || switching || failedBasemap === basemapId(this._fmt)) {
+        return;
       }
+      switching = true;
+      failedBasemap = basemapId(this._fmt);
+      console.warn('Basemap style failed to load', e && e.error);
+      this._notice('Basemap unavailable — showing flows without a background map');
+      setTimeout(() => this._createMap(then), 0);
     });
+
+    if (this._fmt.provider === 'carto' && !(this._fmt.apiKey || '').trim() && this._fmt.type !== 'hidden') {
+      this._notice('CARTO needs your API key (Format › Map control). Showing OpenFreeMap instead.');
+    }
 
     // Set up event handlers
     map.on('load', () => {
@@ -465,6 +418,7 @@ export class Controller {
       // Also needed on recreation: the container may have resized while the
       // replacement map was loading, leaving overlay mask/canvas sizes stale.
       this._resize();
+      then && then(map);
     });
 
     // Store handlers for cleanup
@@ -541,7 +495,7 @@ export class Controller {
     }
 
     // Check if we need to recreate the map
-    const remap = { type: 1, label: 1, forest: 1, road: 1, city: 1, icon: 1, area: 1, building: 1 };
+    const remap = { type: 1, provider: 1, apiKey: 1, label: 1, forest: 1, road: 1, city: 1, icon: 1, area: 1, building: 1 };
     let needsRemap = false;
 
     for (var k in dirty) {
@@ -553,8 +507,7 @@ export class Controller {
 
     if (needsRemap || !this._map) {
       setTimeout(() => {
-        const newMap = this._createMap();
-        newMap.on('load', () => then(newMap));
+        this._createMap(then);
       }, 0);
       return this;
     }

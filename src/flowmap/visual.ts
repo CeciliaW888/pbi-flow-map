@@ -505,7 +505,7 @@ export class Visual implements IVisual {
                     app.repaint(config, 'legend');
                 }
                 if (fmt.mapControl.dirty() || fmt.mapElement.dirty()) {
-                    if (fmt.mapControl.dirty(['type', 'lang', 'pan', 'zoom']) || fmt.mapElement.dirty()) {
+                    if (fmt.mapControl.dirty(['type', 'lang', 'provider', 'apiKey', 'pan', 'zoom']) || fmt.mapElement.dirty()) {
                         app.repaint(config, 'map');
                     }
                     fmt.mapControl.dirty('autoFit') === 'on' && app.tryFitView();
@@ -667,6 +667,8 @@ export class Visual implements IVisual {
         const mcSlices: Slice[] = [
             dd('mapControl', 'type', mc.type),
             dd('mapControl', 'lang', mc.lang),
+            dd('mapControl', 'provider', mc.provider),
+            ...(mc.provider === 'carto' ? [ti('mapControl', 'apiKey', mc.apiKey)] : []),
             sw('mapControl', 'pan', mc.pan),
             sw('mapControl', 'zoom', mc.zoom),
             sw('mapControl', 'autoFit', mc.autoFit),

@@ -27,10 +27,10 @@ The Visual connects to the following external services to render the map:
 - **Data stored:** Photon does not store personal data. It is a stateless, open-source geocoding service built on OpenStreetMap data. See [Komoot's Privacy Policy](https://www.komoot.com/privacy) for details.
 - **When triggered:** Only when location names are provided without pre-supplied coordinates. If you supply Latitude/Longitude columns directly, no geocoding requests are made.
 
-### 2. OpenStreetMap / Carto Map Tiles
+### 2. OpenFreeMap / CARTO Map Tiles
 - **Purpose:** Renders the background map (roads, country outlines, labels).
-- **Data sent:** Standard HTTP tile requests including your IP address, as with any map application.
-- **Privacy:** See [OpenStreetMap Privacy Policy](https://wiki.osmfoundation.org/wiki/Privacy_Policy) and [Carto Privacy Policy](https://carto.com/privacy/).
+- **Data sent:** Standard HTTP tile requests including your IP address, as with any map application. OpenFreeMap (`tiles.openfreemap.org`) is the default. CARTO (`basemaps.cartocdn.com`) is used only if the report author selects it and enters their own CARTO API key, which is then included in each tile request.
+- **Privacy:** See [OpenFreeMap](https://openfreemap.org/) and [CARTO Privacy Policy](https://carto.com/privacy/).
 
 ### 3. MapLibre GL JS
 - **Purpose:** Open-source JavaScript library used to render the interactive map canvas. Runs entirely client-side — no data is sent to MapLibre servers.

@@ -4,9 +4,8 @@
             "name": "WebAccess",
             "essential": true,
             "parameters": [
+                "https://tiles.openfreemap.org",
                 "https://*.basemaps.cartocdn.com",
-                "https://*.tile.openstreetmap.org",
-                "https://server.arcgisonline.com",
                 "https://photon.komoot.io",
                 "https://nominatim.openstreetmap.org"
             ]
@@ -462,6 +461,19 @@
                         {"displayName": "Spanish", "value": "es-ES" },
                         {"displayName": "Swedish", "value": "sv-SE" }
                     ]}
+                },
+                "provider": {
+                    "displayName": "Basemap provider",
+                    "description": "OpenFreeMap is free with no key. CARTO needs your own API key.",
+                    "type": { "enumeration": [
+                        {"displayName": "OpenFreeMap (no key)", "value": "openfreemap"},
+                        {"displayName": "CARTO (your API key)", "value": "carto"}
+                    ]}
+                },
+                "apiKey": {
+                    "displayName": "CARTO API key",
+                    "description": "Free key from carto.com/basemaps/apikey. Saved in the report file and visible to anyone who can edit it; all report views count against this key's quota.",
+                    "type": { "text": true }
                 },
                 "pan": { "displayName": "Pan", "type": { "bool": true } },
                 "zoom": { "displayName": "Zoom", "type": { "bool": true } },

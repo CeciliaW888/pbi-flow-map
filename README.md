@@ -186,8 +186,8 @@ The visual makes **only four categories** of outbound requests, all declared in 
 
 | Destination | Data Sent | When Triggered |
 |-------------|-----------|----------------|
-| `*.basemaps.cartocdn.com` | Tile z/x/y coordinates only | Map tile loading (primary) |
-| `*.tile.openstreetmap.org` | Tile z/x/y coordinates only | Map tile loading (fallback) |
+| `tiles.openfreemap.org` | Style, tile z/x/y, font and icon requests only | Basemap (default) |
+| `*.basemaps.cartocdn.com` | Tile z/x/y coordinates + your CARTO API key | Basemap (only if you choose CARTO and enter a key) |
 | `photon.komoot.io` | Location name string only | Geocoding (default service) |
 | `nominatim.openstreetmap.org` | Location name string only | Geocoding (alternative service) |
 
@@ -214,7 +214,15 @@ Rate limiting is enforced: 1 request/second for Nominatim, 1000ms minimum betwee
 
 ### Map Tile Requests
 
-Tile requests are standard XYZ raster tile fetches containing only zoom level and tile coordinates. No report data is included. If the primary provider (Carto) fails (HTTP 403/429), the visual automatically falls back to OpenStreetMap tiles.
+Tile requests contain only zoom level and tile coordinates. No report data is included.
+
+**Basemap provider** (Format › Map control › Basemap provider):
+
+- **OpenFreeMap (default)** — free, no API key, commercial use allowed. No uptime guarantee: if it is unreachable, the visual shows flows on a blank background with an on-map notice.
+- **CARTO (your API key)** — since August 2026 CARTO watermarks keyless tiles with "API KEY REQUIRED". Get a free key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey/) and paste it into **CARTO API key**. Free tier: 1M tiles/month for commercial use (5M non-commercial).
+  - The key is saved in plain text in the .pbix and appears in tile request URLs, so anyone who can edit the report or inspect network traffic can read it.
+  - Every view of the report counts against that key's quota — use your own key, not a shared one.
+  - If CARTO is selected but no key is entered, the visual uses OpenFreeMap and shows a notice.
 
 ### capabilities.json Permissions
 
@@ -225,8 +233,8 @@ The visual requests a single permission — `WebAccess` — scoped to exactly fo
   "name": "WebAccess",
   "essential": true,
   "parameters": [
+    "https://tiles.openfreemap.org",
     "https://*.basemaps.cartocdn.com",
-    "https://*.tile.openstreetmap.org",
     "https://photon.komoot.io",
     "https://nominatim.openstreetmap.org"
   ]
@@ -267,7 +275,8 @@ See `privacy-policy.md` for the full privacy disclosure covering all third-party
 - Try reimporting the .pbiviz file
 
 ### Map not displaying
-- Check internet connection (map tiles load from OpenStreetMap)
+- Check internet connection (map tiles load from OpenFreeMap, or CARTO if selected)
+- Seeing "API KEY REQUIRED" on the map? You're on an older version — update to 2.0.3.0+, or choose CARTO and enter your own key
 - Verify browser/Power BI has internet access
 - Check browser console for errors (F12)
 
