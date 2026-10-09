@@ -177,10 +177,11 @@ var capability = {
  * CARTO serves keyless requests as HTTP-200 "API KEY REQUIRED" watermark
  * tiles, which no error-based fallback can detect.
  *
- * We deliberately do NOT fall back to other keyless tile servers (Esri legacy
- * MapServer, OSM): their terms don't cover this use, and they too signal
- * refusal with ordinary-looking image tiles. If the basemap fails, the visual
- * shows a blank background plus a visible notice, and flows still render.
+ * We deliberately do NOT fall back to other keyless tile servers (Esri, OSM):
+ * their terms don't cover anonymous use in this visual, and OSM already blocks
+ * us with ordinary-looking "Access blocked" image tiles. See adr/0002. If the
+ * basemap fails, the visual shows a blank background plus a visible notice,
+ * and flows still render.
  */
 export type BasemapProvider = 'openfreemap' | 'carto';
 
@@ -244,6 +245,22 @@ function basemapId(fmt: IMapFormat): string {
 /** Effective provider: CARTO only when chosen AND a key is supplied. */
 function resolveProvider(fmt: IMapFormat): BasemapProvider {
   return fmt.provider === 'carto' && (fmt.apiKey || '').trim() ? 'carto' : 'openfreemap';
+}
+
+// OpenFreeMap's liberty/positron styles hide state/province borders below
+// zoom 5/8, but flow maps usually sit at country zoom where users expect them
+// (the old CARTO raster tiles showed them). The dark style already shows them.
+const STATE_BORDER_LAYERS = ['boundary_3'];
+
+function showStateBorders(map: Map): void {
+  for (const id of STATE_BORDER_LAYERS) {
+    const layer = map.getLayer(id);
+    if (layer) {
+      map.setLayerZoomRange(id, 0, layer.maxzoom === undefined ? 24 : layer.maxzoom);
+      // The style's hsl(0,0%,70%) is too faint to read when zoomed out.
+      map.setPaintProperty(id, 'line-color', 'hsl(0,0%,55%)');
+    }
+  }
 }
 
 function createMapStyle(fmt: IMapFormat): maplibregl.StyleSpecification | string {
@@ -369,14 +386,14 @@ export class Controller {
       minZoom: 1
     };
 
-    const map = new maplibregl.Map(mapOptions);
-
+    // Old maps must be removed BEFORE constructing the new one: they share
+    // this._div, and Map.remove() strips the 'maplibregl-map' class from it,
+    // which would drop MapLibre's container CSS from the replacement.
     // A map whose style never loaded was never promoted to _map; drop it so
     // its canvas doesn't linger under the replacement.
     if (this._pending && this._pending !== this._map) {
       this._pending.remove();
     }
-    this._pending = map;
 
     // Remove old event handlers if map exists
     if (this._map) {
@@ -386,12 +403,18 @@ export class Controller {
       this._map.remove();
     }
 
+    const map = new maplibregl.Map(mapOptions);
+    this._pending = map;
+
     // A style URL that fails to load means 'load' never fires, which would
     // leave the visual stuck with no flows. Detect that and rebuild on a blank
     // background so the data still renders, with a visible explanation.
     let styleLoaded = false;
     let switching = false;
-    map.on('style.load', () => { styleLoaded = true; });
+    map.on('style.load', () => {
+      styleLoaded = true;
+      showStateBorders(map);
+    });
     map.on('error', (e: any) => {
       if (styleLoaded || switching || failedBasemap === basemapId(this._fmt)) {
         return;
